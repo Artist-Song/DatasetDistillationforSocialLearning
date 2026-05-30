@@ -8,6 +8,7 @@ The first evaluation path reports:
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import torch
@@ -102,6 +103,13 @@ def main():
     print(f"device: {device}")
     print(f"ckpt_dir: {ckpt_dir}")
 
+    results = {
+        "checkpoint_stage": args.checkpoint_stage,
+        "dataset": cfg["dataset"]["name"],
+        "split_mode": cfg["split"]["mode"],
+        "model": cfg["model"]["name"],
+        "agents": [],
+    }
     expert_accs = []
     general_accs = []
     for agent_id, class_ids in enumerate(class_splits):
@@ -126,6 +134,14 @@ def main():
         general_acc = evaluate(model, full_loader, device)
         expert_accs.append(expert_acc)
         general_accs.append(general_acc)
+        results["agents"].append(
+            {
+                "agent_id": agent_id,
+                "class_ids": class_ids,
+                "expert_accuracy": expert_acc,
+                "general_accuracy": general_acc,
+            }
+        )
 
         print(
             f"agent_{agent_id} classes={class_ids} "
@@ -133,8 +149,21 @@ def main():
         )
 
     print("=== summary ===")
-    print(f"average_expert_accuracy: {sum(expert_accs) / len(expert_accs):.4f}")
-    print(f"average_general_accuracy: {sum(general_accs) / len(general_accs):.4f}")
+    average_expert_accuracy = sum(expert_accs) / len(expert_accs)
+    average_general_accuracy = sum(general_accs) / len(general_accs)
+    results["summary"] = {
+        "average_expert_accuracy": average_expert_accuracy,
+        "average_general_accuracy": average_general_accuracy,
+    }
+    print(f"average_expert_accuracy: {average_expert_accuracy:.4f}")
+    print(f"average_general_accuracy: {average_general_accuracy:.4f}")
+
+    report_dir = Path(cfg["output"]["root"]) / "reports" / "eval"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / f"{args.checkpoint_stage}_{run_name}.json"
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    print(f"saved_report: {report_path}")
 
 
 if __name__ == "__main__":

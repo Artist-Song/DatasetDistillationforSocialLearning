@@ -2,7 +2,7 @@
 Train receiver agents with cached social packets.
 
 This first social-training path uses all-to-all packets and optimizes:
-L = L_local + lambda_packet * (CE(packet labels) + lambda_kd * KD(packet soft targets))
+L = L_local + lambda_packet * L_packet + lambda_retain * L_retain
 """
 
 import argparse
@@ -80,6 +80,12 @@ def train_receiver(
     anchor_ckpt = torch.load(anchor_path, map_location=device)
     model.load_state_dict(anchor_ckpt["model_state_dict"])
 
+    anchor_model = build_model(cfg, device)
+    anchor_model.load_state_dict(anchor_ckpt["model_state_dict"])
+    anchor_model.eval()
+    for param in anchor_model.parameters():
+        param.requires_grad_(False)
+
     local_subset = subset_by_classes(train_dataset, class_ids)
     local_loader = DataLoader(
         local_subset,
@@ -109,6 +115,7 @@ def train_receiver(
     lr = social_cfg.get("lr", cfg["train"]["lr"])
     lambda_packet = social_cfg.get("lambda_packet", 1.0)
     lambda_kd = social_cfg.get("lambda_kd", 1.0)
+    lambda_retain = social_cfg.get("lambda_retain", 1.0)
     temperature = cfg.get("packet", {}).get("temperature", 2.0)
 
     ce_loss = nn.CrossEntropyLoss()
@@ -139,11 +146,15 @@ def train_receiver(
 
             local_logits = model(local_images)
             packet_logits = model(packet_images)
+            with torch.no_grad():
+                anchor_local_soft_targets = F.softmax(anchor_model(local_images) / temperature, dim=1)
 
             loss_local = ce_loss(local_logits, local_labels)
             loss_packet_ce = ce_loss(packet_logits, packet_labels)
             loss_packet_kd = kd_loss(packet_logits, packet_soft_targets, temperature)
-            loss = loss_local + lambda_packet * (loss_packet_ce + lambda_kd * loss_packet_kd)
+            loss_retain = kd_loss(local_logits, anchor_local_soft_targets, temperature)
+            loss_packet = loss_packet_ce + lambda_kd * loss_packet_kd
+            loss = loss_local + lambda_packet * loss_packet + lambda_retain * loss_retain
 
             loss.backward()
             optimizer.step()
