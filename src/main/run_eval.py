@@ -28,6 +28,13 @@ from src.utils.seed import set_seed
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="实验配置文件路径")
+    parser.add_argument(
+        "--checkpoint-stage",
+        type=str,
+        default="local_pretrain",
+        choices=["local_pretrain", "social_train"],
+        help="要评估的 checkpoint 阶段",
+    )
     return parser.parse_args()
 
 
@@ -86,14 +93,11 @@ def main():
         num_agents=cfg["split"]["num_agents"],
         classes_per_agent=cfg["split"]["classes_per_agent"],
     )
-    ckpt_dir = (
-        Path(cfg["output"]["root"])
-        / "checkpoints"
-        / "local_pretrain"
-        / f"{cfg['dataset']['name']}_{cfg['split']['mode']}_{cfg['model']['name']}"
-    )
+    run_name = f"{cfg['dataset']['name']}_{cfg['split']['mode']}_{cfg['model']['name']}"
+    ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / args.checkpoint_stage / run_name
+    ckpt_suffix = "anchor" if args.checkpoint_stage == "local_pretrain" else "social"
 
-    print("=== run_eval local anchors ===")
+    print(f"=== run_eval {args.checkpoint_stage} ===")
     print(f"dataset: {cfg['dataset']['name']}")
     print(f"device: {device}")
     print(f"ckpt_dir: {ckpt_dir}")
@@ -101,7 +105,7 @@ def main():
     expert_accs = []
     general_accs = []
     for agent_id, class_ids in enumerate(class_splits):
-        ckpt_path = ckpt_dir / f"agent_{agent_id}_anchor.pt"
+        ckpt_path = ckpt_dir / f"agent_{agent_id}_{ckpt_suffix}.pt"
         if not ckpt_path.exists():
             raise FileNotFoundError(f"checkpoint 不存在: {ckpt_path}")
 

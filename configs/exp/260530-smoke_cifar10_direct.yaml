@@ -28,5 +28,12 @@ packet:
   ipc: 10
   temperature: 2.0
 
+social:
+  epochs: 1
+  lr: 0.005
+  lambda_packet: 1.0
+  lambda_kd: 1.0
+  policy: all_to_all
+
 output:
   root: ./outputs
