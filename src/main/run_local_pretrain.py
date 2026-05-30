@@ -31,6 +31,7 @@ from src.datasets.cifar import (
     subset_by_classes,
 )
 from src.models.agent_model import AgentModel
+from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
 from src.utils.seed import set_seed
 
@@ -38,6 +39,12 @@ from src.utils.seed import set_seed
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="实验配置文件路径")
+    parser.add_argument(
+        "--agent-ids",
+        type=str,
+        default="all",
+        help='要运行的 agent，例如 "all"、"0"、"0,2,4" 或 "0-3"',
+    )
     return parser.parse_args()
 
 
@@ -151,7 +158,11 @@ def main():
     print(f"device: {device}")
     print(f"save_dir: {save_dir}")
 
-    for agent_id, class_ids in enumerate(class_splits):
+    selected_agent_ids = parse_agent_ids(args.agent_ids, cfg["split"]["num_agents"])
+    print(f"selected_agent_ids: {selected_agent_ids}")
+
+    for agent_id in selected_agent_ids:
+        class_ids = class_splits[agent_id]
         train_one_agent(
             agent_id=agent_id,
             class_ids=class_ids,

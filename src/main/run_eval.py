@@ -22,6 +22,7 @@ from src.datasets.cifar import (
 )
 from src.main.run_local_pretrain import resolve_device
 from src.models.agent_model import AgentModel
+from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
 from src.utils.seed import set_seed
 
@@ -35,6 +36,12 @@ def parse_args():
         default="local_pretrain",
         choices=["local_pretrain", "social_train"],
         help="要评估的 checkpoint 阶段",
+    )
+    parser.add_argument(
+        "--agent-ids",
+        type=str,
+        default="all",
+        help='要评估的 agent，例如 "all"、"0"、"0,2,4" 或 "0-3"',
     )
     return parser.parse_args()
 
@@ -103,16 +110,21 @@ def main():
     print(f"device: {device}")
     print(f"ckpt_dir: {ckpt_dir}")
 
+    selected_agent_ids = parse_agent_ids(args.agent_ids, cfg["split"]["num_agents"])
+    print(f"selected_agent_ids: {selected_agent_ids}")
+
     results = {
         "checkpoint_stage": args.checkpoint_stage,
         "dataset": cfg["dataset"]["name"],
         "split_mode": cfg["split"]["mode"],
         "model": cfg["model"]["name"],
+        "selected_agent_ids": selected_agent_ids,
         "agents": [],
     }
     expert_accs = []
     general_accs = []
-    for agent_id, class_ids in enumerate(class_splits):
+    for agent_id in selected_agent_ids:
+        class_ids = class_splits[agent_id]
         ckpt_path = ckpt_dir / f"agent_{agent_id}_{ckpt_suffix}.pt"
         if not ckpt_path.exists():
             raise FileNotFoundError(f"checkpoint 不存在: {ckpt_path}")
@@ -160,7 +172,8 @@ def main():
 
     report_dir = Path(cfg["output"]["root"]) / "reports" / "eval"
     report_dir.mkdir(parents=True, exist_ok=True)
-    report_path = report_dir / f"{args.checkpoint_stage}_{run_name}.json"
+    agent_suffix = "all" if args.agent_ids == "all" else args.agent_ids.replace(",", "_").replace("-", "to")
+    report_path = report_dir / f"{args.checkpoint_stage}_{run_name}_{agent_suffix}.json"
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"saved_report: {report_path}")

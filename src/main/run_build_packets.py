@@ -17,6 +17,7 @@ from src.datasets.cifar import build_cifar_train_dataset, make_direct_class_spli
 from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.packet.packet_dataclass import SocialPacket
+from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
 from src.utils.seed import set_seed
 
@@ -24,6 +25,12 @@ from src.utils.seed import set_seed
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True, help="实验配置文件路径")
+    parser.add_argument(
+        "--agent-ids",
+        type=str,
+        default="all",
+        help='要构建 packet 的 sender agent，例如 "all"、"0"、"0,2,4" 或 "0-3"',
+    )
     return parser.parse_args()
 
 
@@ -108,7 +115,11 @@ def main():
     print(f"temperature: {temperature}")
     print(f"packet_dir: {packet_dir}")
 
-    for agent_id, class_ids in enumerate(class_splits):
+    selected_agent_ids = parse_agent_ids(args.agent_ids, cfg["split"]["num_agents"])
+    print(f"selected_agent_ids: {selected_agent_ids}")
+
+    for agent_id in selected_agent_ids:
+        class_ids = class_splits[agent_id]
         ckpt_path = ckpt_dir / f"agent_{agent_id}_anchor.pt"
         if not ckpt_path.exists():
             raise FileNotFoundError(f"checkpoint 不存在: {ckpt_path}")
