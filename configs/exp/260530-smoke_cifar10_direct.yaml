@@ -1,0 +1,32 @@
+seed: 42
+device: cuda
+
+dataset:
+  name: cifar10
+  root: ./data
+  image_size: [32, 32]
+  num_classes: 10
+
+split:
+  mode: direct
+  num_agents: 5
+  classes_per_agent: 2
+
+model:
+  name: conv
+  norm_type: instance
+
+method:
+  name: local_only
+
+train:
+  epochs: 1
+  batch_size: 64
+  lr: 0.01
+
+packet:
+  ipc: 10
+  temperature: 2.0
+
+output:
+  root: ./outputs
