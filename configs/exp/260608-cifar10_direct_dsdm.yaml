@@ -55,4 +55,4 @@ social:
   policy: all_to_all
 
 output:
-  root: ./outputs
+  root: ./outputs/260608-cifar10_direct
