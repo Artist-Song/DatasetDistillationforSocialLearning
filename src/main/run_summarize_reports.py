@@ -39,13 +39,29 @@ def load_compare_report(path: Path):
         report = json.load(f)
 
     social_cfg = report.get("social", {})
+    packet_cfg = report.get("packet", {})
+    packet_only_cfg = report.get("packet_only", {})
     summary = report["summary"]
+    target_stage = report.get("target_stage", "social_train")
+    if target_stage == "packet_only_train":
+        retain_tag = "retain" if packet_only_cfg.get("lambda_retain", 0.0) else "no_retain"
+        head_tag = "head" if packet_only_cfg.get("freeze_backbone", False) else "full"
+        training_strategy = f"packet_only_{head_tag}_{retain_tag}"
+    else:
+        training_strategy = "mixed_social_train"
     return {
         "report_name": path.stem,
+        "target_stage": target_stage,
+        "training_strategy": training_strategy,
+        "packet_source": packet_cfg.get("source", ""),
         "packet_kd_mode": social_cfg.get("packet_kd_mode", ""),
         "lambda_retain": social_cfg.get("lambda_retain", ""),
         "lambda_packet": social_cfg.get("lambda_packet", ""),
         "lambda_kd": social_cfg.get("lambda_kd", ""),
+        "packet_only_packet_kd_mode": packet_only_cfg.get("packet_kd_mode", ""),
+        "packet_only_lambda_retain": packet_only_cfg.get("lambda_retain", ""),
+        "packet_only_lambda_kd": packet_only_cfg.get("lambda_kd", ""),
+        "packet_only_freeze_backbone": packet_only_cfg.get("freeze_backbone", ""),
         "local_average_expert_accuracy": summary["local_average_expert_accuracy"],
         "social_average_expert_accuracy": summary["social_average_expert_accuracy"],
         "delta_average_expert_accuracy": summary["delta_average_expert_accuracy"],
@@ -92,10 +108,17 @@ def main():
     rows.sort(key=lambda row: row[args.sort_by], reverse=args.descending)
 
     fieldnames = [
+        "target_stage",
+        "training_strategy",
+        "packet_source",
         "packet_kd_mode",
         "lambda_retain",
         "lambda_packet",
         "lambda_kd",
+        "packet_only_packet_kd_mode",
+        "packet_only_lambda_retain",
+        "packet_only_lambda_kd",
+        "packet_only_freeze_backbone",
         "social_average_general_accuracy",
         "delta_average_general_accuracy",
         "social_average_expert_accuracy",

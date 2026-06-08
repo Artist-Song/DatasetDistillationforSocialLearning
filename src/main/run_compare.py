@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 from src.utils.config import load_yaml
-from src.utils.run_name import build_base_run_name, build_social_run_name
+from src.utils.run_name import build_base_run_name, build_packet_only_run_name, build_social_run_name
 
 
 def parse_args():
@@ -55,10 +55,13 @@ def main():
     suffix = agent_suffix(args.agent_ids)
     base_run_name = build_base_run_name(cfg)
     social_run_name = build_social_run_name(cfg)
+    target_run_name = social_run_name
+    if args.target_stage == "packet_only_train":
+        target_run_name = build_packet_only_run_name(cfg)
     report_dir = Path(cfg["output"]["root"]) / "reports" / "eval"
 
     local_path = report_dir / f"local_pretrain_{base_run_name}_{suffix}.json"
-    target_path = report_dir / f"{args.target_stage}_{social_run_name}_{suffix}.json"
+    target_path = report_dir / f"{args.target_stage}_{target_run_name}_{suffix}.json"
 
     local_report = load_report(local_path)
     target_report = load_report(target_path)
@@ -72,6 +75,7 @@ def main():
         "dataset": cfg["dataset"]["name"],
         "split_mode": cfg["split"]["mode"],
         "model": cfg["model"]["name"],
+        "packet": cfg.get("packet", {}),
         "social": cfg.get("social", {}),
         "packet_only": cfg.get("packet_only", {}),
         "agents": [],
@@ -141,7 +145,7 @@ def main():
     compare_dir = Path(cfg["output"]["root"]) / "reports" / "compare"
     compare_dir.mkdir(parents=True, exist_ok=True)
     compare_prefix = "compare" if args.target_stage == "social_train" else f"compare_{args.target_stage}"
-    compare_path = compare_dir / f"{compare_prefix}_{social_run_name}_{suffix}.json"
+    compare_path = compare_dir / f"{compare_prefix}_{target_run_name}_{suffix}.json"
     with open(compare_path, "w", encoding="utf-8") as f:
         json.dump(comparison, f, ensure_ascii=False, indent=2)
     print(f"saved_compare: {compare_path}")

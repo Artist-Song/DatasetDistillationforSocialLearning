@@ -59,8 +59,9 @@ packet_only:
   lr: 0.005
   lambda_kd: 1.0
   packet_kd_mode: sender_subset
-  lambda_retain: 0.0
-  freeze_backbone: false
+  lambda_retain: 1.0
+  retain_batch_size: 128
+  freeze_backbone: true
 
 output:
   root: ./outputs/260608-cifar10_direct

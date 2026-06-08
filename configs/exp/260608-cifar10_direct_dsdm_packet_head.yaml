@@ -60,7 +60,7 @@ packet_only:
   lambda_kd: 1.0
   packet_kd_mode: sender_subset
   lambda_retain: 0.0
-  freeze_backbone: false
+  freeze_backbone: true
 
 output:
   root: ./outputs/260608-cifar10_direct

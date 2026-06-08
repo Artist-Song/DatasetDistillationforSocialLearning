@@ -24,7 +24,7 @@ from src.main.run_local_pretrain import resolve_device
 from src.models.agent_model import AgentModel
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
-from src.utils.run_name import build_base_run_name, build_social_run_name
+from src.utils.run_name import build_base_run_name, build_packet_only_run_name, build_social_run_name
 from src.utils.seed import set_seed
 
 
@@ -103,8 +103,10 @@ def main():
         classes_per_agent=cfg["split"]["classes_per_agent"],
     )
     run_name = build_base_run_name(cfg)
-    if args.checkpoint_stage in ["social_train", "packet_only_train"]:
+    if args.checkpoint_stage == "social_train":
         run_name = build_social_run_name(cfg)
+    if args.checkpoint_stage == "packet_only_train":
+        run_name = build_packet_only_run_name(cfg)
     ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / args.checkpoint_stage / run_name
     ckpt_suffix_by_stage = {
         "local_pretrain": "anchor",
