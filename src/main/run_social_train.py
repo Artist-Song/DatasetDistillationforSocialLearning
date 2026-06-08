@@ -26,6 +26,7 @@ from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
+from src.utils.run_name import build_base_run_name, build_social_run_name
 from src.utils.seed import set_seed
 
 
@@ -261,10 +262,11 @@ def main():
         classes_per_agent=cfg["split"]["classes_per_agent"],
     )
 
-    run_name = f"{cfg['dataset']['name']}_{cfg['split']['mode']}_{cfg['model']['name']}"
-    ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / "local_pretrain" / run_name
-    packet_dir = Path(cfg["output"]["root"]) / "packets" / run_name
-    save_dir = Path(cfg["output"]["root"]) / "checkpoints" / "social_train" / run_name
+    base_run_name = build_base_run_name(cfg)
+    social_run_name = build_social_run_name(cfg)
+    ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / "local_pretrain" / base_run_name
+    packet_dir = Path(cfg["output"]["root"]) / "packets" / base_run_name
+    save_dir = Path(cfg["output"]["root"]) / "checkpoints" / "social_train" / social_run_name
     save_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== run_social_train ===")
@@ -272,6 +274,7 @@ def main():
     print(f"device: {device}")
     print(f"ckpt_dir: {ckpt_dir}")
     print(f"packet_dir: {packet_dir}")
+    print(f"social_run_name: {social_run_name}")
     print(f"save_dir: {save_dir}")
 
     selected_agent_ids = parse_agent_ids(args.agent_ids, cfg["split"]["num_agents"])

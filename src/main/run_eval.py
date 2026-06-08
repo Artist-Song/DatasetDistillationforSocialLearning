@@ -24,6 +24,7 @@ from src.main.run_local_pretrain import resolve_device
 from src.models.agent_model import AgentModel
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
+from src.utils.run_name import build_base_run_name, build_social_run_name
 from src.utils.seed import set_seed
 
 
@@ -101,7 +102,9 @@ def main():
         num_agents=cfg["split"]["num_agents"],
         classes_per_agent=cfg["split"]["classes_per_agent"],
     )
-    run_name = f"{cfg['dataset']['name']}_{cfg['split']['mode']}_{cfg['model']['name']}"
+    run_name = build_base_run_name(cfg)
+    if args.checkpoint_stage == "social_train":
+        run_name = build_social_run_name(cfg)
     ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / args.checkpoint_stage / run_name
     ckpt_suffix = "anchor" if args.checkpoint_stage == "local_pretrain" else "social"
 
