@@ -265,7 +265,12 @@ def main():
     base_run_name = build_base_run_name(cfg)
     social_run_name = build_social_run_name(cfg)
     ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / "local_pretrain" / base_run_name
-    packet_dir = Path(cfg["output"]["root"]) / "packets" / base_run_name
+    packet_source = cfg.get("packet", {}).get("source", "raw")
+    packet_dir = Path(cfg["output"]["root"]) / "packets" / base_run_name / packet_source
+    if not packet_dir.exists():
+        legacy_packet_dir = Path(cfg["output"]["root"]) / "packets" / base_run_name
+        if legacy_packet_dir.exists():
+            packet_dir = legacy_packet_dir
     save_dir = Path(cfg["output"]["root"]) / "checkpoints" / "social_train" / social_run_name
     save_dir.mkdir(parents=True, exist_ok=True)
 

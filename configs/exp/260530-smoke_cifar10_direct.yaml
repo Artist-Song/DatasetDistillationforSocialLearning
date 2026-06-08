@@ -25,8 +25,12 @@ train:
   lr: 0.01
 
 packet:
+  source: raw
   ipc: 10
   temperature: 2.0
+  distill_steps: 100
+  distill_lr: 0.1
+  distill_tv_weight: 0.0
 
 social:
   epochs: 1

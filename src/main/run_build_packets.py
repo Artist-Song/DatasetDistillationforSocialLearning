@@ -1,9 +1,10 @@
 """
 Build social packets from local anchor models.
 
-The first packet builder uses real local samples as a stand-in for distilled
-images. This keeps the sender -> packet cache path testable before plugging in
-DSDM.
+Packet images can currently come from:
+- raw: real local samples, useful as an engineering baseline
+- anchor_distill: lightweight anchor-guided distilled images, a placeholder
+  before integrating full DSDM
 """
 
 import argparse
@@ -11,9 +12,9 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Subset
 
 from src.datasets.cifar import build_cifar_train_dataset, make_direct_class_splits
+from src.distill.simple_distiller import build_raw_images, distill_images_with_anchor
 from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.packet.packet_dataclass import SocialPacket
@@ -34,40 +35,47 @@ def parse_args():
     return parser.parse_args()
 
 
-def select_ipc_indices(dataset, class_ids, ipc: int):
-    selected = []
-    counts = {class_id: 0 for class_id in class_ids}
-
-    for idx, target in enumerate(dataset.targets):
-        if target in counts and counts[target] < ipc:
-            selected.append(idx)
-            counts[target] += 1
-        if all(count == ipc for count in counts.values()):
-            break
-
-    missing = {class_id: ipc - count for class_id, count in counts.items() if count < ipc}
-    if missing:
-        raise RuntimeError(f"not enough samples for ipc={ipc}: {missing}")
-
-    return selected
-
-
-def stack_subset_samples(dataset, indices):
-    images = []
-    labels = []
-    subset = Subset(dataset, indices)
-    for image, label in subset:
-        images.append(image)
-        labels.append(label)
-
-    return torch.stack(images, dim=0), torch.tensor(labels, dtype=torch.long)
-
-
 @torch.no_grad()
 def build_soft_targets(model, images: torch.Tensor, temperature: float, device: torch.device):
     model.eval()
     logits = model(images.to(device))
     return F.softmax(logits / temperature, dim=1).cpu()
+
+
+def build_packet_images(model, train_dataset, class_ids, packet_cfg, device: torch.device):
+    ipc = packet_cfg.get("ipc", 10)
+    source = packet_cfg.get("source", "raw")
+    images, hard_labels = build_raw_images(train_dataset, class_ids, ipc)
+    meta = {"packet_source": source}
+
+    if source == "raw":
+        return images, hard_labels, meta
+
+    if source == "anchor_distill":
+        steps = packet_cfg.get("distill_steps", 100)
+        lr = packet_cfg.get("distill_lr", 0.1)
+        tv_weight = packet_cfg.get("distill_tv_weight", 0.0)
+        images, distill_meta = distill_images_with_anchor(
+            anchor_model=model,
+            init_images=images,
+            hard_labels=hard_labels,
+            steps=steps,
+            lr=lr,
+            tv_weight=tv_weight,
+            device=device,
+        )
+        meta.update(
+            {
+                "distill_method": "anchor_ce",
+                "distill_steps": steps,
+                "distill_lr": lr,
+                "distill_tv_weight": tv_weight,
+                **distill_meta,
+            }
+        )
+        return images, hard_labels, meta
+
+    raise ValueError(f"unknown packet.source: {source}")
 
 
 def main():
@@ -80,8 +88,10 @@ def main():
     if cfg["split"]["mode"] != "direct":
         raise NotImplementedError("当前 run_build_packets 先支持 direct split。")
 
-    ipc = cfg.get("packet", {}).get("ipc", 10)
-    temperature = cfg.get("packet", {}).get("temperature", 2.0)
+    packet_cfg = cfg.get("packet", {})
+    ipc = packet_cfg.get("ipc", 10)
+    temperature = packet_cfg.get("temperature", 2.0)
+    source = packet_cfg.get("source", "raw")
 
     train_dataset = build_cifar_train_dataset(
         name=cfg["dataset"]["name"],
@@ -95,17 +105,9 @@ def main():
         classes_per_agent=cfg["split"]["classes_per_agent"],
     )
 
-    ckpt_dir = (
-        Path(cfg["output"]["root"])
-        / "checkpoints"
-        / "local_pretrain"
-        / f"{cfg['dataset']['name']}_{cfg['split']['mode']}_{cfg['model']['name']}"
-    )
-    packet_dir = (
-        Path(cfg["output"]["root"])
-        / "packets"
-        / f"{cfg['dataset']['name']}_{cfg['split']['mode']}_{cfg['model']['name']}"
-    )
+    run_name = f"{cfg['dataset']['name']}_{cfg['split']['mode']}_{cfg['model']['name']}"
+    ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / "local_pretrain" / run_name
+    packet_dir = Path(cfg["output"]["root"]) / "packets" / run_name / source
     packet_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== run_build_packets ===")
@@ -113,6 +115,7 @@ def main():
     print(f"device: {device}")
     print(f"ipc: {ipc}")
     print(f"temperature: {temperature}")
+    print(f"packet_source: {source}")
     print(f"packet_dir: {packet_dir}")
 
     selected_agent_ids = parse_agent_ids(args.agent_ids, cfg["split"]["num_agents"])
@@ -124,12 +127,17 @@ def main():
         if not ckpt_path.exists():
             raise FileNotFoundError(f"checkpoint 不存在: {ckpt_path}")
 
-        indices = select_ipc_indices(train_dataset, class_ids, ipc)
-        images, hard_labels = stack_subset_samples(train_dataset, indices)
-
         model = build_model(cfg, device)
         ckpt = torch.load(ckpt_path, map_location=device)
         model.load_state_dict(ckpt["model_state_dict"])
+
+        images, hard_labels, image_meta = build_packet_images(
+            model=model,
+            train_dataset=train_dataset,
+            class_ids=class_ids,
+            packet_cfg=packet_cfg,
+            device=device,
+        )
         soft_targets = build_soft_targets(model, images, temperature, device)
 
         packet = SocialPacket(
@@ -139,11 +147,12 @@ def main():
             hard_labels=hard_labels.cpu(),
             soft_targets=soft_targets,
             meta={
-                "packet_type": "raw_x_q",
+                "packet_type": f"{source}_x_q",
                 "ipc": ipc,
                 "temperature": temperature,
                 "sender_backbone": cfg["model"]["name"],
                 "dataset": cfg["dataset"]["name"],
+                **image_meta,
             },
         )
 
