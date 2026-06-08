@@ -3,8 +3,7 @@ Build social packets from local anchor models.
 
 Packet images can currently come from:
 - raw: real local samples, useful as an engineering baseline
-- anchor_distill: lightweight anchor-guided distilled images, a placeholder
-  before integrating full DSDM
+- dsdm: DSDM-style prototype/semantic/history-smoothed distilled images
 """
 
 import argparse
@@ -14,7 +13,7 @@ import torch
 import torch.nn.functional as F
 
 from src.datasets.cifar import build_cifar_train_dataset, make_direct_class_splits
-from src.distill.simple_distiller import build_raw_images, distill_images_with_anchor
+from src.distill.simple_distiller import build_raw_images, distill_images_with_dsdm
 from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.packet.packet_dataclass import SocialPacket
@@ -45,34 +44,21 @@ def build_soft_targets(model, images: torch.Tensor, temperature: float, device: 
 def build_packet_images(model, train_dataset, class_ids, packet_cfg, device: torch.device):
     ipc = packet_cfg.get("ipc", 10)
     source = packet_cfg.get("source", "raw")
-    images, hard_labels = build_raw_images(train_dataset, class_ids, ipc)
     meta = {"packet_source": source}
 
     if source == "raw":
+        images, hard_labels = build_raw_images(train_dataset, class_ids, ipc)
         return images, hard_labels, meta
 
-    if source == "anchor_distill":
-        steps = packet_cfg.get("distill_steps", 100)
-        lr = packet_cfg.get("distill_lr", 0.1)
-        tv_weight = packet_cfg.get("distill_tv_weight", 0.0)
-        images, distill_meta = distill_images_with_anchor(
+    if source == "dsdm":
+        images, hard_labels, distill_meta = distill_images_with_dsdm(
             anchor_model=model,
-            init_images=images,
-            hard_labels=hard_labels,
-            steps=steps,
-            lr=lr,
-            tv_weight=tv_weight,
+            train_dataset=train_dataset,
+            class_ids=class_ids,
+            packet_cfg=packet_cfg,
             device=device,
         )
-        meta.update(
-            {
-                "distill_method": "anchor_ce",
-                "distill_steps": steps,
-                "distill_lr": lr,
-                "distill_tv_weight": tv_weight,
-                **distill_meta,
-            }
-        )
+        meta.update(distill_meta)
         return images, hard_labels, meta
 
     raise ValueError(f"unknown packet.source: {source}")

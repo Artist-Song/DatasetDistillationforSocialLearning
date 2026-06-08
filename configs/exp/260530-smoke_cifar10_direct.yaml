@@ -25,12 +25,25 @@ train:
   lr: 0.01
 
 packet:
-  source: raw
+  source: dsdm
   ipc: 10
   temperature: 2.0
   distill_steps: 100
-  distill_lr: 0.1
-  distill_tv_weight: 0.0
+  distill_lr: 0.005
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  dsdm_init: random
+  factor: 1
+  decode_type: single
+  aug_type: color_crop_cutout
+  idx_from: 2
+  idx_to: -1
+  metric: l1
+  cov_weight: 50.0
+  smooth_iter: 2000
+  smooth_factor: 0.99
+  h_p_weight: 0.2
 
 social:
   epochs: 1
