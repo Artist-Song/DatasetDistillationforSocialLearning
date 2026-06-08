@@ -37,6 +37,8 @@ RAW_EVAL_REPORT="${OUTPUT_ROOT}/reports/eval/social_train_${RAW_RUN}_all.json"
 DSDM_COMPARE_REPORT="${OUTPUT_ROOT}/reports/compare/compare_${DSDM_RUN}_all.json"
 RAW_COMPARE_REPORT="${OUTPUT_ROOT}/reports/compare/compare_${RAW_RUN}_all.json"
 SUMMARY_REPORT="${OUTPUT_ROOT}/reports/summary/compare_summary.md"
+DSDM_INSPECT_REPORT="${OUTPUT_ROOT}/reports/packet_inspect/packet_inspection_${BASE_RUN}_dsdm_all.md"
+RAW_INSPECT_REPORT="${OUTPUT_ROOT}/reports/packet_inspect/packet_inspection_${BASE_RUN}_raw_all.md"
 
 LOG_DIR="${OUTPUT_ROOT}/logs"
 mkdir -p "${LOG_DIR}"
@@ -115,49 +117,59 @@ run_agent_step \
   "5" \
   "${PYTHON_BIN}" -m src.main.run_build_packets --config "${DSDM_CONFIG}"
 
+run_step \
+  "04_inspect_packets_dsdm" \
+  "${DSDM_INSPECT_REPORT}" \
+  "${PYTHON_BIN}" -m src.main.run_inspect_packets --config "${DSDM_CONFIG}"
+
 run_agent_step \
-  "04_social_train_dsdm" \
+  "05_social_train_dsdm" \
   "${DSDM_SOCIAL_DIR}" \
   "agent_*_social.pt" \
   "5" \
   "${PYTHON_BIN}" -m src.main.run_social_train --config "${DSDM_CONFIG}"
 
 run_step \
-  "05_eval_social_dsdm" \
+  "06_eval_social_dsdm" \
   "${DSDM_EVAL_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_eval --config "${DSDM_CONFIG}" --checkpoint-stage social_train
 
 run_step \
-  "06_compare_dsdm" \
+  "07_compare_dsdm" \
   "${DSDM_COMPARE_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_compare --config "${DSDM_CONFIG}"
 
 run_agent_step \
-  "07_build_packets_raw" \
+  "08_build_packets_raw" \
   "${RAW_PACKET_DIR}" \
   "agent_*_packet.pt" \
   "5" \
   "${PYTHON_BIN}" -m src.main.run_build_packets --config "${RAW_CONFIG}"
 
+run_step \
+  "09_inspect_packets_raw" \
+  "${RAW_INSPECT_REPORT}" \
+  "${PYTHON_BIN}" -m src.main.run_inspect_packets --config "${RAW_CONFIG}"
+
 run_agent_step \
-  "08_social_train_raw" \
+  "10_social_train_raw" \
   "${RAW_SOCIAL_DIR}" \
   "agent_*_social.pt" \
   "5" \
   "${PYTHON_BIN}" -m src.main.run_social_train --config "${RAW_CONFIG}"
 
 run_step \
-  "09_eval_social_raw" \
+  "11_eval_social_raw" \
   "${RAW_EVAL_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_eval --config "${RAW_CONFIG}" --checkpoint-stage social_train
 
 run_step \
-  "10_compare_raw" \
+  "12_compare_raw" \
   "${RAW_COMPARE_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_compare --config "${RAW_CONFIG}"
 
 run_step \
-  "11_summarize_reports" \
+  "13_summarize_reports" \
   "${SUMMARY_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_summarize_reports --config "${DSDM_CONFIG}"
 
@@ -165,3 +177,5 @@ echo "=== done ==="
 echo "DSDM compare: ${DSDM_COMPARE_REPORT}"
 echo "RAW compare:  ${RAW_COMPARE_REPORT}"
 echo "Summary:      ${SUMMARY_REPORT}"
+echo "DSDM inspect: ${DSDM_INSPECT_REPORT}"
+echo "RAW inspect:  ${RAW_INSPECT_REPORT}"
