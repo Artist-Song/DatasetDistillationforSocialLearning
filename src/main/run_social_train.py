@@ -1,8 +1,11 @@
 """
 Train receiver agents with cached social packets.
 
-This first social-training path uses all-to-all packets and optimizes:
+This social-training path uses all-to-all packets and optimizes:
 L = L_local + lambda_packet * L_packet + lambda_retain * L_retain
+
+For packet KD, only the sender's class subset is used. This avoids treating a
+sender anchor's probabilities on unseen classes as useful supervision.
 """
 
 import argparse
@@ -50,6 +53,18 @@ def kd_loss(logits: torch.Tensor, soft_targets: torch.Tensor, temperature: float
     return F.kl_div(log_probs, soft_targets, reduction="batchmean") * (temperature ** 2)
 
 
+def subset_kd_loss(
+    logits: torch.Tensor,
+    soft_targets: torch.Tensor,
+    class_ids: torch.Tensor,
+    temperature: float,
+) -> torch.Tensor:
+    subset_logits = logits.gather(dim=1, index=class_ids)
+    subset_soft_targets = soft_targets.gather(dim=1, index=class_ids)
+    subset_soft_targets = subset_soft_targets / subset_soft_targets.sum(dim=1, keepdim=True).clamp_min(1e-8)
+    return kd_loss(subset_logits, subset_soft_targets, temperature)
+
+
 def load_packets_for_receiver(packet_dir: Path, receiver_id: int, num_agents: int):
     packets = []
     for sender_id in range(num_agents):
@@ -66,7 +81,14 @@ def packets_to_dataset(packets):
     images = torch.cat([packet.images for packet in packets], dim=0)
     hard_labels = torch.cat([packet.hard_labels for packet in packets], dim=0)
     soft_targets = torch.cat([packet.soft_targets for packet in packets], dim=0)
-    return TensorDataset(images, hard_labels, soft_targets)
+    class_ids = torch.cat(
+        [
+            packet.class_ids.long().view(1, -1).repeat(packet.images.size(0), 1)
+            for packet in packets
+        ],
+        dim=0,
+    )
+    return TensorDataset(images, hard_labels, soft_targets, class_ids)
 
 
 def train_receiver(
@@ -141,13 +163,14 @@ def train_receiver(
 
         progress = tqdm(local_loader, desc=f"agent_{receiver_id} social epoch {epoch + 1}/{epochs}")
         for local_images, local_labels in progress:
-            packet_images, packet_labels, packet_soft_targets = next(packet_iter)
+            packet_images, packet_labels, packet_soft_targets, packet_class_ids = next(packet_iter)
 
             local_images = local_images.to(device, non_blocking=True)
             local_labels = local_labels.to(device, non_blocking=True)
             packet_images = packet_images.to(device, non_blocking=True)
             packet_labels = packet_labels.to(device, non_blocking=True)
             packet_soft_targets = packet_soft_targets.to(device, non_blocking=True)
+            packet_class_ids = packet_class_ids.to(device, non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
 
@@ -158,7 +181,12 @@ def train_receiver(
 
             loss_local = ce_loss(local_logits, local_labels)
             loss_packet_ce = ce_loss(packet_logits, packet_labels)
-            loss_packet_kd = kd_loss(packet_logits, packet_soft_targets, temperature)
+            loss_packet_kd = subset_kd_loss(
+                packet_logits,
+                packet_soft_targets,
+                packet_class_ids,
+                temperature,
+            )
             loss_retain = kd_loss(local_logits, anchor_local_soft_targets, temperature)
             loss_packet = loss_packet_ce + lambda_kd * loss_packet_kd
             loss = loss_local + lambda_packet * loss_packet + lambda_retain * loss_retain
