@@ -137,7 +137,14 @@ run_step \
   "${OUTPUT_ROOT}/reports/summary/.always_run_packet_only_ablation" \
   "${PYTHON_BIN}" -m src.main.run_summarize_reports --config "configs/exp/260608-cifar10_direct_dsdm.yaml"
 
+run_step \
+  "plot_packet_only_ablation" \
+  "${OUTPUT_ROOT}/reports/figures/.always_run_plot_packet_only_ablation" \
+  "${PYTHON_BIN}" -m src.main.run_plot_results --config "configs/exp/260608-cifar10_direct_dsdm.yaml"
+
 TOTAL_ELAPSED=$(( $(date +%s) - SCRIPT_START_TS ))
 echo "finished_at: $(now_text)"
 echo "total_elapsed: $(format_seconds "${TOTAL_ELAPSED}")"
 echo "summary: ${OUTPUT_ROOT}/reports/summary/compare_summary.md"
+echo "overview_figure: ${OUTPUT_ROOT}/reports/figures/experiment_overview.png"
+echo "tradeoff_figure: ${OUTPUT_ROOT}/reports/figures/expert_general_tradeoff.png"

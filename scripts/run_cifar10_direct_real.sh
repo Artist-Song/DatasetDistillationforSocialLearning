@@ -249,12 +249,19 @@ run_step \
   "${OUTPUT_ROOT}/reports/summary/.always_run_summarize" \
   "${PYTHON_BIN}" -m src.main.run_summarize_reports --config "${DSDM_CONFIG}"
 
+run_step \
+  "20_plot_results" \
+  "${OUTPUT_ROOT}/reports/figures/.always_run_plot_results" \
+  "${PYTHON_BIN}" -m src.main.run_plot_results --config "${DSDM_CONFIG}"
+
 echo "=== done ==="
 echo "DSDM compare: ${DSDM_COMPARE_REPORT}"
 echo "RAW compare:  ${RAW_COMPARE_REPORT}"
 echo "DSDM packet-only compare: ${DSDM_PACKET_ONLY_COMPARE_REPORT}"
 echo "RAW packet-only compare:  ${RAW_PACKET_ONLY_COMPARE_REPORT}"
 echo "Summary:      ${SUMMARY_REPORT}"
+echo "Overview figure: ${OUTPUT_ROOT}/reports/figures/experiment_overview.png"
+echo "Tradeoff figure: ${OUTPUT_ROOT}/reports/figures/expert_general_tradeoff.png"
 echo "DSDM inspect: ${DSDM_INSPECT_REPORT}"
 echo "RAW inspect:  ${RAW_INSPECT_REPORT}"
 TOTAL_ELAPSED=$(( $(date +%s) - SCRIPT_START_TS ))
