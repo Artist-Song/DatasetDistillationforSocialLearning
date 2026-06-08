@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Subset
+from tqdm import tqdm
 
 
 def select_ipc_indices(dataset, class_ids, ipc: int):
@@ -554,7 +555,8 @@ def distill_images_with_dsdm(anchor_model, train_dataset, class_ids, packet_cfg,
     loss_dict_avg = {"Proto": 0.0, "Sem": 0.0, "Mem": 0.0}
     last_loss = 0.0
 
-    for it in range(steps):
+    progress = tqdm(range(steps), desc="dsdm distill", leave=False)
+    for it in progress:
         loss_total = 0.0
         loss_dict_avg = {"Proto": 0.0, "Sem": 0.0, "Mem": 0.0}
         synset.data.data = torch.clamp(synset.data.data, min=0.0, max=1.0)
@@ -596,6 +598,12 @@ def distill_images_with_dsdm(anchor_model, train_dataset, class_ids, packet_cfg,
                     h_p[class_pos] = (1 - smooth_factor) * smooth_syns[class_pos] + smooth_factor * h_p[class_pos]
 
         last_loss = loss_total / len(class_ids)
+        progress.set_postfix(
+            loss=f"{last_loss:.4f}",
+            proto=f"{loss_dict_avg.get('Proto', 0.0) / max(len(class_ids), 1):.4f}",
+            sem=f"{loss_dict_avg.get('Sem', 0.0) / max(len(class_ids), 1):.4f}",
+            mem=f"{loss_dict_avg.get('Mem', 0.0) / max(len(class_ids), 1):.4f}",
+        )
 
     images = synset.data.detach().clamp(0.0, 1.0).cpu()
     hard_labels = synset.targets.detach().cpu()

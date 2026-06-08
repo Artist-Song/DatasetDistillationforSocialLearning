@@ -7,6 +7,7 @@ Packet images can currently come from:
 """
 
 import argparse
+import time
 from pathlib import Path
 
 import torch
@@ -107,8 +108,12 @@ def main():
     selected_agent_ids = parse_agent_ids(args.agent_ids, cfg["split"]["num_agents"])
     print(f"selected_agent_ids: {selected_agent_ids}")
 
+    total_start_time = time.perf_counter()
     for agent_id in selected_agent_ids:
+        agent_start_time = time.perf_counter()
         class_ids = class_splits[agent_id]
+        print(f"\n=== build packet agent_{agent_id} ===")
+        print(f"class_ids: {class_ids}")
         ckpt_path = ckpt_dir / f"agent_{agent_id}_anchor.pt"
         if not ckpt_path.exists():
             raise FileNotFoundError(f"checkpoint 不存在: {ckpt_path}")
@@ -144,10 +149,15 @@ def main():
 
         packet_path = packet_dir / f"agent_{agent_id}_packet.pt"
         torch.save(packet, packet_path)
+        elapsed = time.perf_counter() - agent_start_time
         print(
             f"saved: {packet_path} "
-            f"images={tuple(packet.images.shape)} soft_targets={tuple(packet.soft_targets.shape)}"
+            f"images={tuple(packet.images.shape)} soft_targets={tuple(packet.soft_targets.shape)} "
+            f"elapsed={elapsed:.1f}s"
         )
+
+    total_elapsed = time.perf_counter() - total_start_time
+    print(f"total_build_packets_elapsed: {total_elapsed:.1f}s")
 
 
 if __name__ == "__main__":

@@ -48,6 +48,19 @@ RAW_INSPECT_REPORT="${OUTPUT_ROOT}/reports/packet_inspect/packet_inspection_${BA
 
 LOG_DIR="${OUTPUT_ROOT}/logs"
 mkdir -p "${LOG_DIR}"
+SCRIPT_START_TS="$(date +%s)"
+
+now_text() {
+  date "+%Y-%m-%d %H:%M:%S"
+}
+
+format_seconds() {
+  local total="$1"
+  local hours=$((total / 3600))
+  local minutes=$(((total % 3600) / 60))
+  local seconds=$((total % 60))
+  printf "%02dh:%02dm:%02ds" "${hours}" "${minutes}" "${seconds}"
+}
 
 run_step() {
   local name="$1"
@@ -56,13 +69,23 @@ run_step() {
 
   local log_path="${LOG_DIR}/${name}.log"
   if [[ "${FORCE}" != "1" && -e "${done_path}" ]]; then
-    echo "[skip] ${name}: found ${done_path}"
+    echo "[skip] $(now_text) ${name}: found ${done_path}"
     return
   fi
 
-  echo "[run] ${name}"
+  local start_ts
+  start_ts="$(date +%s)"
+  echo "[run] $(now_text) ${name}"
   echo "      log: ${log_path}"
-  "$@" 2>&1 | tee "${log_path}"
+  echo "      tqdm output inside this step will show live ETA where available."
+  if "$@" 2>&1 | tee "${log_path}"; then
+    local elapsed=$(( $(date +%s) - start_ts ))
+    echo "[done] $(now_text) ${name} elapsed=$(format_seconds "${elapsed}")"
+  else
+    local elapsed=$(( $(date +%s) - start_ts ))
+    echo "[fail] $(now_text) ${name} elapsed=$(format_seconds "${elapsed}")"
+    return 1
+  fi
 }
 
 expect_agent_files() {
@@ -87,16 +110,27 @@ run_agent_step() {
 
   local log_path="${LOG_DIR}/${name}.log"
   if [[ "${FORCE}" != "1" ]] && expect_agent_files "${dir}" "${pattern}" "${expected}"; then
-    echo "[skip] ${name}: found ${expected} files in ${dir}"
+    echo "[skip] $(now_text) ${name}: found ${expected} files in ${dir}"
     return
   fi
 
-  echo "[run] ${name}"
+  local start_ts
+  start_ts="$(date +%s)"
+  echo "[run] $(now_text) ${name}"
   echo "      log: ${log_path}"
-  "$@" 2>&1 | tee "${log_path}"
+  echo "      tqdm output inside this step will show live ETA where available."
+  if "$@" 2>&1 | tee "${log_path}"; then
+    local elapsed=$(( $(date +%s) - start_ts ))
+    echo "[done] $(now_text) ${name} elapsed=$(format_seconds "${elapsed}")"
+  else
+    local elapsed=$(( $(date +%s) - start_ts ))
+    echo "[fail] $(now_text) ${name} elapsed=$(format_seconds "${elapsed}")"
+    return 1
+  fi
 }
 
 echo "=== CIFAR10 direct real experiment ==="
+echo "started_at: $(now_text)"
 echo "python: ${PYTHON_BIN}"
 echo "force: ${FORCE}"
 echo "dsdm_config: ${DSDM_CONFIG}"
@@ -221,3 +255,6 @@ echo "RAW packet-only compare:  ${RAW_PACKET_ONLY_COMPARE_REPORT}"
 echo "Summary:      ${SUMMARY_REPORT}"
 echo "DSDM inspect: ${DSDM_INSPECT_REPORT}"
 echo "RAW inspect:  ${RAW_INSPECT_REPORT}"
+TOTAL_ELAPSED=$(( $(date +%s) - SCRIPT_START_TS ))
+echo "finished_at: $(now_text)"
+echo "total_elapsed: $(format_seconds "${TOTAL_ELAPSED}")"
