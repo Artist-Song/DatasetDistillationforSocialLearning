@@ -30,12 +30,18 @@ DSDM_PACKET_DIR="${OUTPUT_ROOT}/packets/${BASE_RUN}/dsdm"
 RAW_PACKET_DIR="${OUTPUT_ROOT}/packets/${BASE_RUN}/raw"
 DSDM_SOCIAL_DIR="${OUTPUT_ROOT}/checkpoints/social_train/${DSDM_RUN}"
 RAW_SOCIAL_DIR="${OUTPUT_ROOT}/checkpoints/social_train/${RAW_RUN}"
+DSDM_PACKET_ONLY_DIR="${OUTPUT_ROOT}/checkpoints/packet_only_train/${DSDM_RUN}"
+RAW_PACKET_ONLY_DIR="${OUTPUT_ROOT}/checkpoints/packet_only_train/${RAW_RUN}"
 
 LOCAL_EVAL_REPORT="${OUTPUT_ROOT}/reports/eval/local_pretrain_${BASE_RUN}_all.json"
 DSDM_EVAL_REPORT="${OUTPUT_ROOT}/reports/eval/social_train_${DSDM_RUN}_all.json"
 RAW_EVAL_REPORT="${OUTPUT_ROOT}/reports/eval/social_train_${RAW_RUN}_all.json"
+DSDM_PACKET_ONLY_EVAL_REPORT="${OUTPUT_ROOT}/reports/eval/packet_only_train_${DSDM_RUN}_all.json"
+RAW_PACKET_ONLY_EVAL_REPORT="${OUTPUT_ROOT}/reports/eval/packet_only_train_${RAW_RUN}_all.json"
 DSDM_COMPARE_REPORT="${OUTPUT_ROOT}/reports/compare/compare_${DSDM_RUN}_all.json"
 RAW_COMPARE_REPORT="${OUTPUT_ROOT}/reports/compare/compare_${RAW_RUN}_all.json"
+DSDM_PACKET_ONLY_COMPARE_REPORT="${OUTPUT_ROOT}/reports/compare/compare_packet_only_train_${DSDM_RUN}_all.json"
+RAW_PACKET_ONLY_COMPARE_REPORT="${OUTPUT_ROOT}/reports/compare/compare_packet_only_train_${RAW_RUN}_all.json"
 SUMMARY_REPORT="${OUTPUT_ROOT}/reports/summary/compare_summary.md"
 DSDM_INSPECT_REPORT="${OUTPUT_ROOT}/reports/packet_inspect/packet_inspection_${BASE_RUN}_dsdm_all.md"
 RAW_INSPECT_REPORT="${OUTPUT_ROOT}/reports/packet_inspect/packet_inspection_${BASE_RUN}_raw_all.md"
@@ -140,42 +146,78 @@ run_step \
   "${PYTHON_BIN}" -m src.main.run_compare --config "${DSDM_CONFIG}"
 
 run_agent_step \
-  "08_build_packets_raw" \
+  "08_packet_only_train_dsdm" \
+  "${DSDM_PACKET_ONLY_DIR}" \
+  "agent_*_packet_only.pt" \
+  "5" \
+  "${PYTHON_BIN}" -m src.main.run_packet_only_train --config "${DSDM_CONFIG}"
+
+run_step \
+  "09_eval_packet_only_dsdm" \
+  "${DSDM_PACKET_ONLY_EVAL_REPORT}" \
+  "${PYTHON_BIN}" -m src.main.run_eval --config "${DSDM_CONFIG}" --checkpoint-stage packet_only_train
+
+run_step \
+  "10_compare_packet_only_dsdm" \
+  "${DSDM_PACKET_ONLY_COMPARE_REPORT}" \
+  "${PYTHON_BIN}" -m src.main.run_compare --config "${DSDM_CONFIG}" --target-stage packet_only_train
+
+run_agent_step \
+  "11_build_packets_raw" \
   "${RAW_PACKET_DIR}" \
   "agent_*_packet.pt" \
   "5" \
   "${PYTHON_BIN}" -m src.main.run_build_packets --config "${RAW_CONFIG}"
 
 run_step \
-  "09_inspect_packets_raw" \
+  "12_inspect_packets_raw" \
   "${RAW_INSPECT_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_inspect_packets --config "${RAW_CONFIG}"
 
 run_agent_step \
-  "10_social_train_raw" \
+  "13_social_train_raw" \
   "${RAW_SOCIAL_DIR}" \
   "agent_*_social.pt" \
   "5" \
   "${PYTHON_BIN}" -m src.main.run_social_train --config "${RAW_CONFIG}"
 
 run_step \
-  "11_eval_social_raw" \
+  "14_eval_social_raw" \
   "${RAW_EVAL_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_eval --config "${RAW_CONFIG}" --checkpoint-stage social_train
 
 run_step \
-  "12_compare_raw" \
+  "15_compare_raw" \
   "${RAW_COMPARE_REPORT}" \
   "${PYTHON_BIN}" -m src.main.run_compare --config "${RAW_CONFIG}"
 
+run_agent_step \
+  "16_packet_only_train_raw" \
+  "${RAW_PACKET_ONLY_DIR}" \
+  "agent_*_packet_only.pt" \
+  "5" \
+  "${PYTHON_BIN}" -m src.main.run_packet_only_train --config "${RAW_CONFIG}"
+
 run_step \
-  "13_summarize_reports" \
-  "${SUMMARY_REPORT}" \
+  "17_eval_packet_only_raw" \
+  "${RAW_PACKET_ONLY_EVAL_REPORT}" \
+  "${PYTHON_BIN}" -m src.main.run_eval --config "${RAW_CONFIG}" --checkpoint-stage packet_only_train
+
+run_step \
+  "18_compare_packet_only_raw" \
+  "${RAW_PACKET_ONLY_COMPARE_REPORT}" \
+  "${PYTHON_BIN}" -m src.main.run_compare --config "${RAW_CONFIG}" --target-stage packet_only_train
+
+run_step \
+  "19_summarize_reports" \
+  "${OUTPUT_ROOT}/reports/summary/.always_run_summarize" \
   "${PYTHON_BIN}" -m src.main.run_summarize_reports --config "${DSDM_CONFIG}"
 
 echo "=== done ==="
 echo "DSDM compare: ${DSDM_COMPARE_REPORT}"
 echo "RAW compare:  ${RAW_COMPARE_REPORT}"
+echo "DSDM packet-only compare: ${DSDM_PACKET_ONLY_COMPARE_REPORT}"
+echo "RAW packet-only compare:  ${RAW_PACKET_ONLY_COMPARE_REPORT}"
 echo "Summary:      ${SUMMARY_REPORT}"
 echo "DSDM inspect: ${DSDM_INSPECT_REPORT}"
 echo "RAW inspect:  ${RAW_INSPECT_REPORT}"

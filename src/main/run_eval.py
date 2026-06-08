@@ -35,7 +35,7 @@ def parse_args():
         "--checkpoint-stage",
         type=str,
         default="local_pretrain",
-        choices=["local_pretrain", "social_train"],
+        choices=["local_pretrain", "social_train", "packet_only_train"],
         help="要评估的 checkpoint 阶段",
     )
     parser.add_argument(
@@ -103,10 +103,15 @@ def main():
         classes_per_agent=cfg["split"]["classes_per_agent"],
     )
     run_name = build_base_run_name(cfg)
-    if args.checkpoint_stage == "social_train":
+    if args.checkpoint_stage in ["social_train", "packet_only_train"]:
         run_name = build_social_run_name(cfg)
     ckpt_dir = Path(cfg["output"]["root"]) / "checkpoints" / args.checkpoint_stage / run_name
-    ckpt_suffix = "anchor" if args.checkpoint_stage == "local_pretrain" else "social"
+    ckpt_suffix_by_stage = {
+        "local_pretrain": "anchor",
+        "social_train": "social",
+        "packet_only_train": "packet_only",
+    }
+    ckpt_suffix = ckpt_suffix_by_stage[args.checkpoint_stage]
 
     print(f"=== run_eval {args.checkpoint_stage} ===")
     print(f"dataset: {cfg['dataset']['name']}")

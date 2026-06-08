@@ -38,5 +38,11 @@ social:
   packet_kd_mode: sender_subset
   policy: all_to_all
 
+packet_only:
+  epochs: 30
+  lr: 0.005
+  lambda_kd: 1.0
+  packet_kd_mode: sender_subset
+
 output:
   root: ./outputs/260608-cifar10_direct
