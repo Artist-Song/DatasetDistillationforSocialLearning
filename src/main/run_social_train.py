@@ -4,8 +4,7 @@ Train receiver agents with cached social packets.
 This social-training path uses all-to-all packets and optimizes:
 L = L_local + lambda_packet * L_packet + lambda_retain * L_retain
 
-For packet KD, only the sender's class subset is used. This avoids treating a
-sender anchor's probabilities on unseen classes as useful supervision.
+Packet KD supports three modes: none, full, and sender_subset.
 """
 
 import argparse
@@ -63,6 +62,22 @@ def subset_kd_loss(
     subset_soft_targets = soft_targets.gather(dim=1, index=class_ids)
     subset_soft_targets = subset_soft_targets / subset_soft_targets.sum(dim=1, keepdim=True).clamp_min(1e-8)
     return kd_loss(subset_logits, subset_soft_targets, temperature)
+
+
+def compute_packet_kd_loss(
+    mode: str,
+    logits: torch.Tensor,
+    soft_targets: torch.Tensor,
+    class_ids: torch.Tensor,
+    temperature: float,
+) -> torch.Tensor:
+    if mode == "none":
+        return logits.new_tensor(0.0)
+    if mode == "full":
+        return kd_loss(logits, soft_targets, temperature)
+    if mode == "sender_subset":
+        return subset_kd_loss(logits, soft_targets, class_ids, temperature)
+    raise ValueError(f"unknown packet_kd_mode: {mode}")
 
 
 def load_packets_for_receiver(packet_dir: Path, receiver_id: int, num_agents: int):
@@ -145,6 +160,9 @@ def train_receiver(
     lambda_packet = social_cfg.get("lambda_packet", 1.0)
     lambda_kd = social_cfg.get("lambda_kd", 1.0)
     lambda_retain = social_cfg.get("lambda_retain", 1.0)
+    packet_kd_mode = social_cfg.get("packet_kd_mode", "sender_subset")
+    if packet_kd_mode not in ["none", "full", "sender_subset"]:
+        raise ValueError(f"unknown packet_kd_mode: {packet_kd_mode}")
     temperature = cfg.get("packet", {}).get("temperature", 2.0)
 
     ce_loss = nn.CrossEntropyLoss()
@@ -154,6 +172,7 @@ def train_receiver(
     print(f"class_ids: {class_ids}")
     print(f"local_samples: {len(local_subset)}")
     print(f"packet_samples: {len(packet_dataset)}")
+    print(f"packet_kd_mode: {packet_kd_mode}")
 
     for epoch in range(epochs):
         model.train()
@@ -181,7 +200,8 @@ def train_receiver(
 
             loss_local = ce_loss(local_logits, local_labels)
             loss_packet_ce = ce_loss(packet_logits, packet_labels)
-            loss_packet_kd = subset_kd_loss(
+            loss_packet_kd = compute_packet_kd_loss(
+                packet_kd_mode,
                 packet_logits,
                 packet_soft_targets,
                 packet_class_ids,
