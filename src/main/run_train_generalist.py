@@ -15,6 +15,7 @@ from src.datasets.cifar import build_cifar_train_dataset
 from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.utils.config import load_yaml
+from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
 from src.utils.seed import set_seed
 
 
@@ -27,6 +28,9 @@ def parse_args():
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    experiment_id = get_experiment_id(cfg, args.config)
+    experiment_root = get_experiment_root(cfg, args.config)
+    experiment = get_experiment_metadata(cfg, args.config)
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -52,6 +56,8 @@ def main():
     criterion = nn.CrossEntropyLoss()
 
     print("=== run_train_generalist ===")
+    print(f"experiment_id: {experiment_id}")
+    print(f"experiment_root: {experiment_root}")
     print(f"dataset: {cfg['dataset']['name']}")
     print(f"device: {device}")
     print(f"epochs: {epochs}")
@@ -79,10 +85,21 @@ def main():
             total_seen += batch_size
             progress.set_postfix(loss=f"{total_loss / total_seen:.4f}", acc=f"{total_correct / total_seen:.4f}")
 
-    save_dir = Path(cfg["output"]["root"]) / "checkpoints" / "generalist"
+    save_dir = experiment_root / "checkpoints" / "generalist"
     save_dir.mkdir(parents=True, exist_ok=True)
     save_path = save_dir / "generalist.pt"
-    torch.save({"model_state_dict": model.state_dict(), "cfg": cfg}, save_path)
+    torch.save(
+        {
+            "agent_id": "generalist",
+            "known_classes": list(range(cfg["dataset"]["num_classes"])),
+            "stage": "generalist",
+            "experiment_id": experiment_id,
+            "experiment": experiment,
+            "model_state_dict": model.state_dict(),
+            "cfg": cfg,
+        },
+        save_path,
+    )
     print(f"saved: {save_path}")
 
 

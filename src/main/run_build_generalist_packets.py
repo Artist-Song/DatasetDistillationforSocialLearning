@@ -14,6 +14,7 @@ from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.packet.packet_dataclass import SocialPacket
 from src.utils.config import load_yaml
+from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
 from src.utils.seed import set_seed
 
 
@@ -44,6 +45,9 @@ def resolve_packet_source(source: str) -> str:
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    experiment_id = get_experiment_id(cfg, args.config)
+    experiment_root = get_experiment_root(cfg, args.config)
+    experiment = get_experiment_metadata(cfg, args.config)
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -53,11 +57,17 @@ def main():
     ipc = packet_cfg.get("ipc", 10)
     temperature = packet_cfg.get("temperature", 2.0)
 
-    ckpt_path = Path(cfg["output"]["root"]) / "checkpoints" / "generalist" / "generalist.pt"
+    ckpt_path = experiment_root / "checkpoints" / "generalist" / "generalist.pt"
     if not ckpt_path.exists():
         raise FileNotFoundError(f"generalist checkpoint not found: {ckpt_path}")
     model = build_model(cfg, device)
     ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt_experiment_id = ckpt.get("experiment_id")
+    if ckpt_experiment_id != experiment_id:
+        raise RuntimeError(
+            f"generalist checkpoint experiment_id mismatch for {ckpt_path}: "
+            f"expected {experiment_id}, got {ckpt_experiment_id}"
+        )
     model.load_state_dict(ckpt["model_state_dict"])
 
     train_dataset = build_cifar_train_dataset(
@@ -66,10 +76,12 @@ def main():
         image_size=tuple(cfg["dataset"]["image_size"]),
         download=True,
     )
-    packet_dir = Path(cfg["output"]["root"]) / "packets" / "generalist" / canonical_source
+    packet_dir = experiment_root / "packets" / "generalist" / canonical_source
     packet_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== run_build_generalist_packets ===")
+    print(f"experiment_id: {experiment_id}")
+    print(f"experiment_root: {experiment_root}")
     print(f"source: {source}")
     print(f"canonical_source: {canonical_source}")
     print(f"ipc: {ipc}")
@@ -91,6 +103,8 @@ def main():
                 "ipc": ipc,
                 "temperature": temperature,
                 "dataset": cfg["dataset"]["name"],
+                "experiment_id": experiment_id,
+                "experiment": experiment,
             },
         )
         packet_path = packet_dir / f"class_{class_id}_packet.pt"

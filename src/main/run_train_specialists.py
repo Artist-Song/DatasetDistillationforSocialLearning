@@ -17,6 +17,7 @@ from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
+from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
 from src.utils.seed import set_seed
 
 
@@ -27,7 +28,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def train_one_agent(agent_id, split, cfg, train_dataset, device, save_dir):
+def train_one_agent(agent_id, split, cfg, train_dataset, device, save_dir, experiment_id, experiment):
     known_classes = split.known
     missing_classes = split.missing
     subset = subset_by_classes(train_dataset, known_classes)
@@ -77,6 +78,8 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, save_dir):
             "known_classes": known_classes,
             "missing_classes": missing_classes,
             "stage": "specialist_local",
+            "experiment_id": experiment_id,
+            "experiment": experiment,
             "model_state_dict": model.state_dict(),
             "cfg": cfg,
         },
@@ -88,6 +91,9 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, save_dir):
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    experiment_id = get_experiment_id(cfg, args.config)
+    experiment_root = get_experiment_root(cfg, args.config)
+    experiment = get_experiment_metadata(cfg, args.config)
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -100,16 +106,18 @@ def main():
         image_size=tuple(cfg["dataset"]["image_size"]),
         download=True,
     )
-    save_dir = Path(cfg["output"]["root"]) / "checkpoints" / "specialists"
+    save_dir = experiment_root / "checkpoints" / "specialists"
     save_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== run_train_specialists ===")
+    print(f"experiment_id: {experiment_id}")
+    print(f"experiment_root: {experiment_root}")
     print(f"split: {split_name}")
     print(f"device: {device}")
     print(f"selected_agent_ids: {selected_agent_ids}")
 
     for agent_id in selected_agent_ids:
-        train_one_agent(agent_id, splits[agent_id], cfg, train_dataset, device, save_dir)
+        train_one_agent(agent_id, splits[agent_id], cfg, train_dataset, device, save_dir, experiment_id, experiment)
 
 
 if __name__ == "__main__":

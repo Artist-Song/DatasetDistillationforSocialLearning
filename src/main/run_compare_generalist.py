@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.datasets.splits import get_partial_split
 from src.utils.config import load_yaml
+from src.utils.experiment import assert_report_experiment, get_experiment_id, get_experiment_metadata, get_experiment_root
 
 
 def parse_args():
@@ -61,11 +62,16 @@ def estimate_communication(cfg, num_agents: int, missing_per_agent: int):
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    experiment_id = get_experiment_id(cfg, args.config)
+    experiment_root = get_experiment_root(cfg, args.config)
+    experiment = get_experiment_metadata(cfg, args.config)
     agent_suffix = "all" if args.agent_ids == "all" else args.agent_ids.replace(",", "_").replace("-", "to")
-    report_dir = Path(cfg["output"]["root"]) / "reports" / "generalist_packet"
+    report_dir = experiment_root / "reports" / "generalist_packet"
 
     local_report, local_path = load_report(report_dir, "local", agent_suffix)
     social_report, social_path = load_report(report_dir, "social_head", agent_suffix)
+    assert_report_experiment(local_report, experiment_id, local_path)
+    assert_report_experiment(social_report, experiment_id, social_path)
     local_by_agent = {item["agent_id"]: item for item in local_report["agents"]}
 
     agents = []
@@ -105,6 +111,8 @@ def main():
     communication = estimate_communication(cfg, len(social_report["selected_agent_ids"]), missing_per_agent)
 
     results = {
+        "experiment_id": experiment_id,
+        "experiment": experiment,
         "dataset": cfg["dataset"]["name"],
         "split_name": cfg["split"]["name"],
         "local_report": str(local_path),
@@ -115,6 +123,8 @@ def main():
     }
 
     print("=== run_compare_generalist ===")
+    print(f"experiment_id: {experiment_id}")
+    print(f"experiment_root: {experiment_root}")
     for key, value in summary.items():
         print(f"{key}: {value:.4f}")
     print(f"stage1_generalist_training_mib: {communication['stage1_generalist_training_mib']:.4f}")

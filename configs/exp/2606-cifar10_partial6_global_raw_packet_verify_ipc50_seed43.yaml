@@ -1,5 +1,5 @@
-seed: 42
-experiment_id: 2606-cifar10_partial6_global_raw_packet_real_ipc50
+seed: 43
+experiment_id: 2606-cifar10_partial6_global_raw_packet_verify_ipc50_seed43
 device: cuda
 
 dataset:
@@ -20,7 +20,7 @@ model:
   norm_type: instance
 
 method:
-  name: generalist_guided_global_raw_packet_real_ipc50
+  name: generalist_guided_global_raw_packet_verify_ipc50_seed43
 
 train:
   epochs: 50

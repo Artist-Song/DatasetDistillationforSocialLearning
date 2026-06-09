@@ -17,6 +17,7 @@ from src.main.run_local_pretrain import resolve_device
 from src.models.social_head_model import SocialHeadAgent
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
+from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
 from src.utils.seed import set_seed
 
 
@@ -52,19 +53,25 @@ def make_loader(dataset, cfg, device):
     )
 
 
-def load_stage_model(cfg, device, agent_id: int, stage: str):
+def load_stage_model(cfg, device, agent_id: int, stage: str, experiment_root: Path, experiment_id: str):
     if stage == "local":
-        ckpt_path = Path(cfg["output"]["root"]) / "checkpoints" / "specialists" / f"agent_{agent_id}_specialist.pt"
+        ckpt_path = experiment_root / "checkpoints" / "specialists" / f"agent_{agent_id}_specialist.pt"
         model = build_model(cfg, device)
         head = None
     else:
-        ckpt_path = Path(cfg["output"]["root"]) / "checkpoints" / "social_head" / f"agent_{agent_id}_social_head.pt"
+        ckpt_path = experiment_root / "checkpoints" / "social_head" / f"agent_{agent_id}_social_head.pt"
         social_cfg = cfg.get("social_head", cfg.get("social", {}))
         model = SocialHeadAgent(cfg, device=device, feature_idx=social_cfg.get("feature_idx"))
         head = "social"
     if not ckpt_path.exists():
         raise FileNotFoundError(f"checkpoint not found: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location=device)
+    ckpt_experiment_id = ckpt.get("experiment_id")
+    if ckpt_experiment_id != experiment_id:
+        raise RuntimeError(
+            f"checkpoint experiment_id mismatch for {ckpt_path}: "
+            f"expected {experiment_id}, got {ckpt_experiment_id}"
+        )
     model.load_state_dict(ckpt["model_state_dict"])
     return model, head, ckpt_path
 
@@ -72,6 +79,9 @@ def load_stage_model(cfg, device, agent_id: int, stage: str):
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    experiment_id = get_experiment_id(cfg, args.config)
+    experiment_root = get_experiment_root(cfg, args.config)
+    experiment = get_experiment_metadata(cfg, args.config)
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -86,10 +96,14 @@ def main():
     full_loader = make_loader(test_dataset, cfg, device)
 
     print(f"=== run_eval_specialists {args.checkpoint_stage} ===")
+    print(f"experiment_id: {experiment_id}")
+    print(f"experiment_root: {experiment_root}")
     print(f"device: {device}")
     print(f"selected_agent_ids: {selected_agent_ids}")
 
     results = {
+        "experiment_id": experiment_id,
+        "experiment": experiment,
         "checkpoint_stage": args.checkpoint_stage,
         "dataset": cfg["dataset"]["name"],
         "split_name": cfg["split"]["name"],
@@ -102,7 +116,7 @@ def main():
 
     for agent_id in selected_agent_ids:
         split = splits[agent_id]
-        model, head, ckpt_path = load_stage_model(cfg, device, agent_id, args.checkpoint_stage)
+        model, head, ckpt_path = load_stage_model(cfg, device, agent_id, args.checkpoint_stage, experiment_root, experiment_id)
         known_loader = make_loader(subset_by_classes(test_dataset, split.known), cfg, device)
         missing_loader = make_loader(subset_by_classes(test_dataset, split.missing), cfg, device)
 
@@ -138,7 +152,7 @@ def main():
     for key, value in results["summary"].items():
         print(f"{key}: {value:.4f}")
 
-    report_dir = Path(cfg["output"]["root"]) / "reports" / "generalist_packet"
+    report_dir = experiment_root / "reports" / "generalist_packet"
     report_dir.mkdir(parents=True, exist_ok=True)
     agent_suffix = "all" if args.agent_ids == "all" else args.agent_ids.replace(",", "_").replace("-", "to")
     report_path = report_dir / f"eval_{args.checkpoint_stage}_{agent_suffix}.json"
