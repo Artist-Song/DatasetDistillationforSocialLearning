@@ -19,7 +19,16 @@ class SocialHeadAgent(nn.Module):
             norm_type=cfg["model"]["norm_type"],
         ).to(device)
         self.feature_idx = self._default_feature_idx() if feature_idx is None else feature_idx
-        self.social_head = nn.Linear(self._classifier_in_features(), cfg["dataset"]["num_classes"]).to(device)
+        feature_dim = self._classifier_in_features()
+        self.social_head = nn.Sequential(
+            nn.Linear(feature_dim, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, feature_dim),
+            nn.ReLU(),
+            nn.Linear(feature_dim, cfg["dataset"]["num_classes"]),
+        ).to(device)
 
     def _backbone(self):
         return self.local_model.get_backbone()
@@ -54,10 +63,11 @@ class SocialHeadAgent(nn.Module):
         classifier = self._local_classifier()
         if not hasattr(classifier, "weight"):
             return
+        final_layer = self.social_head[-1]
         with torch.no_grad():
-            self.social_head.weight.copy_(classifier.weight)
-            if self.social_head.bias is not None and getattr(classifier, "bias", None) is not None:
-                self.social_head.bias.copy_(classifier.bias)
+            final_layer.weight.copy_(classifier.weight)
+            if final_layer.bias is not None and getattr(classifier, "bias", None) is not None:
+                final_layer.bias.copy_(classifier.bias)
 
     def freeze_backbone(self):
         for param in self._backbone().parameters():
