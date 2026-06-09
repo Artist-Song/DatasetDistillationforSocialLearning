@@ -73,6 +73,16 @@ class SocialHeadAgent(nn.Module):
         for param in self.social_head.parameters():
             param.requires_grad_(True)
 
+    def train_social_head_and_backbone(self):
+        for param in self.parameters():
+            param.requires_grad_(False)
+        for param in self._backbone().parameters():
+            param.requires_grad_(True)
+        for param in self._local_classifier().parameters():
+            param.requires_grad_(False)
+        for param in self.social_head.parameters():
+            param.requires_grad_(True)
+
     def extract_features(self, x: torch.Tensor) -> torch.Tensor:
         backbone = self._backbone()
         try:

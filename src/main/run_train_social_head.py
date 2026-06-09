@@ -3,6 +3,7 @@ Train specialist social heads with class-balanced real and packet samples.
 """
 
 import argparse
+import copy
 from pathlib import Path
 
 import torch
@@ -128,8 +129,13 @@ def kd_loss(logits, soft_targets, temperature: float):
     return nn.functional.kl_div(log_probs, soft_targets, reduction="batchmean") * (temperature * temperature)
 
 
+def count_trainable_parameters(model):
+    return sum(param.numel() for param in model.parameters() if param.requires_grad)
+
+
 def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root: Path, packet_dir: Path, save_dir: Path, experiment_id, experiment):
     social_cfg = cfg.get("social_head", cfg.get("social", {}))
+    train_mode = social_cfg.get("train_mode", "social_head_only_balanced")
     samples_per_class = social_cfg.get("samples_per_class", social_cfg.get("k_per_class", 4))
     steps_per_epoch = social_cfg.get("steps_per_epoch", 100)
     sampler = ClassBalancedStepSampler(train_dataset, split.known, split.missing, packet_dir, samples_per_class, experiment_id)
@@ -148,9 +154,19 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
     model = SocialHeadAgent(cfg, device=device, feature_idx=social_cfg.get("feature_idx"))
     model.load_local_state_dict(local_ckpt["model_state_dict"])
     model.init_social_head_from_local()
-    model.freeze_backbone()
+    teacher_model = copy.deepcopy(model.local_model).to(device)
+    teacher_model.eval()
+    for param in teacher_model.parameters():
+        param.requires_grad_(False)
+
     model.freeze_local_head()
-    model.train_social_head_only()
+    if train_mode == "social_head_only_balanced":
+        model.freeze_backbone()
+        model.train_social_head_only()
+    elif train_mode == "social_head_backbone_balanced":
+        model.train_social_head_and_backbone()
+    else:
+        raise ValueError(f"unknown social_head.train_mode: {train_mode}")
 
     optimizer = optim.SGD(
         filter(lambda p: p.requires_grad, model.parameters()),
@@ -169,12 +185,16 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
     print(f"\n=== train social head agent_{agent_id} ===")
     print(f"known_classes: {split.known}")
     print(f"missing_classes: {split.missing}")
+    print(f"train_mode: {train_mode}")
     print(f"samples_per_class: {samples_per_class}")
     print(f"steps_per_epoch: {steps_per_epoch}")
+    print(f"trainable_parameters: {count_trainable_parameters(model)}")
 
     for epoch in range(epochs):
         model.train()
-        model.local_model.eval()
+        if train_mode == "social_head_only_balanced":
+            model.local_model.eval()
+        teacher_model.eval()
         total_loss = 0.0
         progress = tqdm(range(steps_per_epoch), desc=f"agent_{agent_id} social_head epoch {epoch + 1}/{epochs}")
         for _ in progress:
@@ -192,7 +212,7 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
             loss_packet_ce = ce(packet_logits, packet_labels)
             loss_packet_kd = kd_loss(packet_logits, packet_soft_targets, temperature)
             with torch.no_grad():
-                local_teacher_logits = model(known_images, head="local")
+                local_teacher_logits = teacher_model(known_images)
             loss_retain = nn.functional.mse_loss(known_logits, local_teacher_logits)
             loss = (
                 lambda_known_ce * loss_known_ce

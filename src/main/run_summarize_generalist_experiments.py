@@ -31,6 +31,7 @@ def flatten_report(report, report_path: Path):
         "split_name": report.get("split_name"),
         "packet_source": packet.get("source"),
         "ipc": packet.get("ipc"),
+        "train_mode": social_head.get("train_mode"),
         "social_epochs": social_head.get("epochs"),
         "samples_per_class": social_head.get("samples_per_class"),
         "steps_per_epoch": social_head.get("steps_per_epoch"),
