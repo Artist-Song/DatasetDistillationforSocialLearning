@@ -30,6 +30,17 @@ def build_soft_targets(model, images, temperature, device):
     return F.softmax(logits / temperature, dim=1).cpu()
 
 
+def resolve_packet_source(source: str) -> str:
+    if source == "global_raw":
+        return "global_raw_packet"
+    if source == "global_raw_packet":
+        return source
+    raise NotImplementedError(
+        "generalist packet version only supports packet.source=global_raw_packet "
+        "or backward-compatible alias global_raw"
+    )
+
+
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
@@ -37,9 +48,8 @@ def main():
     device = resolve_device(cfg.get("device", "cpu"))
 
     packet_cfg = cfg.get("packet", {})
-    source = packet_cfg.get("source", "global_raw")
-    if source != "global_raw":
-        raise NotImplementedError("first generalist packet version only supports packet.source=global_raw")
+    source = packet_cfg.get("source", "global_raw_packet")
+    canonical_source = resolve_packet_source(source)
     ipc = packet_cfg.get("ipc", 10)
     temperature = packet_cfg.get("temperature", 2.0)
 
@@ -56,11 +66,12 @@ def main():
         image_size=tuple(cfg["dataset"]["image_size"]),
         download=True,
     )
-    packet_dir = Path(cfg["output"]["root"]) / "packets" / "generalist" / source
+    packet_dir = Path(cfg["output"]["root"]) / "packets" / "generalist" / canonical_source
     packet_dir.mkdir(parents=True, exist_ok=True)
 
     print("=== run_build_generalist_packets ===")
     print(f"source: {source}")
+    print(f"canonical_source: {canonical_source}")
     print(f"ipc: {ipc}")
     print(f"packet_dir: {packet_dir}")
 
@@ -75,7 +86,8 @@ def main():
             soft_targets=soft_targets,
             meta={
                 "packet_type": "global_raw_x_q",
-                "packet_source": source,
+                "packet_source": canonical_source,
+                "packet_source_alias": source,
                 "ipc": ipc,
                 "temperature": temperature,
                 "dataset": cfg["dataset"]["name"],

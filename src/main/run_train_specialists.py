@@ -27,7 +27,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def train_one_agent(agent_id, known_classes, cfg, train_dataset, device, save_dir):
+def train_one_agent(agent_id, split, cfg, train_dataset, device, save_dir):
+    known_classes = split.known
+    missing_classes = split.missing
     subset = subset_by_classes(train_dataset, known_classes)
     loader = DataLoader(
         subset,
@@ -73,6 +75,8 @@ def train_one_agent(agent_id, known_classes, cfg, train_dataset, device, save_di
         {
             "agent_id": agent_id,
             "known_classes": known_classes,
+            "missing_classes": missing_classes,
+            "stage": "specialist_local",
             "model_state_dict": model.state_dict(),
             "cfg": cfg,
         },
@@ -105,7 +109,7 @@ def main():
     print(f"selected_agent_ids: {selected_agent_ids}")
 
     for agent_id in selected_agent_ids:
-        train_one_agent(agent_id, splits[agent_id].known, cfg, train_dataset, device, save_dir)
+        train_one_agent(agent_id, splits[agent_id], cfg, train_dataset, device, save_dir)
 
 
 if __name__ == "__main__":

@@ -1,58 +1,231 @@
 # PROJECT_SPEC.md
 
-## 问题定义
-本项目研究多 agent 社会化学习中的低成本知识交互问题。不同于直接交换模型参数，我们将跨 agent 交互对象定义为 social packet。每个 agent 先在本地 expert 数据上训练 anchor model，再通过 DSDM 将本地 expert 数据蒸馏为少量 distilled images，并结合 anchor model 生成 soft targets，构成 social packet。随后，各 agent 通过 social pool 交换 packet，并在接收端进行 packet-based social learning。
+## Project Definition
 
-## 任务流程
-Step 1. agent 学习自己的 expert 类
-Step 2. agent 使用 DSDM 蒸馏 expert 类，并生成 soft targets
-Step 3. social packet 传入整体通信池
-Step 4. agent 从通信池抓取 packet 并学习
-Step 5. 输出 expert/general/average/communication/heterogeneity 指标
+This project implements a conservative first version of **generalist-guided social packet learning**.
 
-## 数据划分
-### direct
-- CIFAR10-5-2
-- CIFAR100-4-25
+The system has specialist agents and one generalist teacher:
 
-### social
-每个 agent 具有：
-- private expert classes
-- bridge classes
+1. Each specialist initially knows 6 CIFAR10 classes and misses 4 classes.
+2. The generalist teacher trains on all CIFAR10 classes.
+3. The generalist builds class-wise `global_raw_packet` packets.
+4. Each specialist receives only packets for its missing classes.
+5. The specialist freezes its backbone and local head, then trains only a social head.
+6. Evaluation reports known, missing, and general accuracy.
+7. Compare reports include accuracy deltas and Stage 1 / Stage 2 communication estimates.
 
-## model pool
-- conv
-- resnet18
-- vit_tiny
+The first stable version intentionally does not implement DSDM packets, heterogeneous models, or peer packet exchange.
 
-## social packet
-SocialPacket(
-    sender_id,
-    class_ids,
-    images,
-    hard_labels,
-    soft_targets,
-    meta
-)
+## Existing Framework Compatibility
 
-## baseline 套件
-- local_only
-- raw_share
-- masc_style_baseline
-- packet_x_only
-- packet_x_q
+The following old entry points and modules must remain usable:
 
-## 默认训练策略
-- sender 先离线蒸馏 packet
-- packet 缓存到磁盘
-- receiver 训练时读取 packet
-- social policy 使用 all-to-all
-- receiver loss = local loss + packet loss + retain loss
+- `src/main/run_local_pretrain.py`
+- `src/main/run_build_packets.py`
+- `src/main/run_social_train.py`
+- `src/main/run_packet_only_train.py`
+- `src/main/run_eval.py`
+- `src/main/run_compare.py`
+- `src/distill/simple_distiller.py`
+- `src/models/model_pool.py`
+- `src/models/agent_model.py`
 
-## receiver loss
-L = L_local + lambda_packet * L_packet + lambda_retain * L_retain
+New generalist-guided behavior is implemented through new entry points:
 
-其中：
-- L_local: 本地 expert 数据上的监督损失
-- L_packet: packet 上的 CE + KD
-- L_retain: 当前模型与本地 anchor 在 expert 数据上的保持约束
+- `src/main/run_train_generalist.py`
+- `src/main/run_train_specialists.py`
+- `src/main/run_build_generalist_packets.py`
+- `src/main/run_train_social_head.py`
+- `src/main/run_eval_specialists.py`
+- `src/main/run_compare_generalist.py`
+
+## CIFAR10 Partial Split
+
+The first supported split is:
+
+```yaml
+split:
+  mode: partial_known
+  name: cifar10_partial6
+  num_agents: 5
+  known_classes_per_agent: 6
+  missing_classes_per_agent: 4
+```
+
+Fixed classes:
+
+```text
+agent_0 known [0,1,2,3,4,5], missing [6,7,8,9]
+agent_1 known [2,3,4,5,6,7], missing [0,1,8,9]
+agent_2 known [4,5,6,7,8,9], missing [0,1,2,3]
+agent_3 known [0,1,6,7,8,9], missing [2,3,4,5]
+agent_4 known [0,1,2,3,8,9], missing [4,5,6,7]
+```
+
+## Stage 1A: Specialist Local Training
+
+Entry:
+
+```bash
+python -m src.main.run_train_specialists --config CONFIG --agent-ids all
+```
+
+Each specialist trains on its own known classes only.
+
+Checkpoint:
+
+```text
+outputs/checkpoints/specialists/agent_{id}_specialist.pt
+```
+
+Required checkpoint fields:
+
+```python
+{
+    "agent_id": int,
+    "known_classes": list,
+    "missing_classes": list,
+    "stage": "specialist_local",
+    "model_state_dict": ...,
+    "cfg": dict,
+}
+```
+
+## Stage 1B: Generalist Teacher Training
+
+Entry:
+
+```bash
+python -m src.main.run_train_generalist --config CONFIG
+```
+
+The generalist trains on all CIFAR10 classes.
+
+Checkpoint:
+
+```text
+outputs/checkpoints/generalist/generalist.pt
+```
+
+## Stage 2A: Generalist Raw Packet Building
+
+Entry:
+
+```bash
+python -m src.main.run_build_generalist_packets --config CONFIG
+```
+
+Canonical packet source:
+
+```yaml
+packet:
+  source: global_raw_packet
+```
+
+Backward-compatible alias:
+
+```yaml
+packet:
+  source: global_raw
+```
+
+Both should resolve to the canonical output directory:
+
+```text
+outputs/packets/generalist/global_raw_packet/class_{c}_packet.pt
+```
+
+Each packet stores raw images, hard labels, generalist soft targets, and metadata.
+
+## Stage 2B: Social Head Training
+
+Entry:
+
+```bash
+python -m src.main.run_train_social_head --config CONFIG --agent-ids all
+```
+
+The receiver loads its specialist checkpoint, initializes a social head from the local head, freezes the backbone and local head, then updates only the social head.
+
+Each training step is class-balanced:
+
+```text
+known real:     samples_per_class per known class
+missing packet: samples_per_class per missing class
+```
+
+Packet sampling allows replacement.
+
+Social-head loss:
+
+```text
+loss =
+  lambda_known_ce  * CE(social_head(known_real), known_label)
++ lambda_packet_ce * CE(social_head(packet), packet_label)
++ lambda_packet_kd * KD(social_head(packet), packet_soft_target)
++ lambda_retain    * retain(social_head(known_real), frozen_local_head(known_real))
+```
+
+Checkpoint:
+
+```text
+outputs/checkpoints/social_head/agent_{id}_social_head.pt
+```
+
+## Evaluation
+
+Entry:
+
+```bash
+python -m src.main.run_eval_specialists --config CONFIG --checkpoint-stage local
+python -m src.main.run_eval_specialists --config CONFIG --checkpoint-stage social_head
+```
+
+Required metrics:
+
+```text
+known_accuracy
+missing_accuracy
+general_accuracy
+```
+
+## Compare
+
+Entry:
+
+```bash
+python -m src.main.run_compare_generalist --config CONFIG
+```
+
+Required deltas:
+
+```text
+delta_known_accuracy
+delta_missing_accuracy
+delta_general_accuracy
+```
+
+Communication report:
+
+- Stage 1: raw images used to train the generalist.
+- Stage 2: missing-class packets consumed by specialists.
+
+## Configs
+
+Smoke test:
+
+```text
+configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml
+```
+
+Real experiment:
+
+```text
+configs/exp/2606-cifar10_partial6_global_raw_packet_real.yaml
+```
+
+The legacy filename below is kept as a smoke-compatible config:
+
+```text
+configs/exp/2606-cifar10_partial6_global_raw_packet.yaml
+```

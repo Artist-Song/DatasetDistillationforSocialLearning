@@ -1,42 +1,145 @@
 # AGENTS.md
 
-## 项目目标
-实现一个基于 PyTorch 的多 agent 社会化学习框架，将数据集蒸馏引入社会化学习中，用 social packet 替代参数交互，以缓解模型异构下的知识传递问题。
+## Current Objective
 
-## v1 范围
-- 数据集：CIFAR10 / CIFAR100
-- 数据划分：direct / social
-- 模型池：conv / resnet18 / vit_tiny
-- social packet：P = {X_distill, y, q}
-- 通信策略：all-to-all
-- baselines:
-  1. local_only
-  2. raw_share
-  3. masc_style_baseline
-  4. packet_x_only
-  5. packet_x_q
+Build the first stable closed loop for **generalist-guided social packet learning** on the existing codebase.
 
-## 工程原则
-- 优先交付最小可运行版本
-- 每一阶段都要有独立入口脚本
-- local anchor 与 DSDM packet 必须支持离线缓存
-- v1 不实现动态路由
-- v1 不实现复杂 projector
-- v1 优先保证 direct split 跑通，再做 social split
+Do not redesign the framework. Do not delete old functionality. Do not break the old entry points:
 
-## 指标
-- expert_accuracy
-- general_accuracy
-- average_accuracy
-- bytes_per_packet
-- total_comm_bytes
-- accuracy_per_mb
-- heterogeneity_gap
+- `src/main/run_local_pretrain.py`
+- `src/main/run_build_packets.py`
+- `src/main/run_social_train.py`
+- `src/main/run_packet_only_train.py`
+- `src/main/run_eval.py`
+- `src/main/run_compare.py`
+- `src/distill/simple_distiller.py`
+- `src/models/model_pool.py`
+- `src/models/agent_model.py`
 
-## 沟通规则
-- 默认中文
-- 每次修改前先给简短计划
-- 每次完成后说明：
-  - 改了哪些文件
-  - 当前能运行到哪一步
-  - 还缺什么
+New behavior should be added through new scripts, new configs, and compatible wrappers.
+
+## First Stable Version
+
+Only implement and stabilize:
+
+- CIFAR10 partial known split.
+- Generalist teacher training on all classes.
+- Specialist local training on known classes only.
+- `global_raw_packet` class-wise packets from the generalist.
+- Specialist social-head-only training on missing class packets.
+- Known, missing, and general evaluation.
+- Compare report with accuracy deltas and Stage 1 / Stage 2 communication estimates.
+
+Do not add DSDM packets yet. Do not add heterogeneous models yet. Do not add peer packets yet.
+
+## Packet Source Naming
+
+Use:
+
+```yaml
+packet:
+  source: global_raw_packet
+```
+
+Keep `global_raw` only as a backward-compatible alias. Internally, new outputs should use:
+
+```text
+outputs/packets/generalist/global_raw_packet/
+```
+
+## Fixed CIFAR10 Split
+
+```text
+agent_0 known [0,1,2,3,4,5], missing [6,7,8,9]
+agent_1 known [2,3,4,5,6,7], missing [0,1,8,9]
+agent_2 known [4,5,6,7,8,9], missing [0,1,2,3]
+agent_3 known [0,1,6,7,8,9], missing [2,3,4,5]
+agent_4 known [0,1,2,3,8,9], missing [4,5,6,7]
+```
+
+Specialist checkpoints must save:
+
+```python
+{
+    "agent_id": int,
+    "known_classes": list,
+    "missing_classes": list,
+    "stage": "specialist_local",
+    "model_state_dict": ...,
+    "cfg": dict,
+}
+```
+
+## Social Head Contract
+
+Prefer a wrapper around the current `AgentModel` and backbone. The wrapper should support:
+
+```python
+forward(x, head="local")
+forward(x, head="social")
+init_social_head_from_local()
+freeze_backbone()
+freeze_local_head()
+train_social_head_only()
+```
+
+Social-head training must freeze the backbone and local head. Only `social_head` parameters should update.
+
+## Balanced Step Sampling
+
+Do not build a static mixed dataset of all known real samples plus a few packet samples.
+
+Each social-head training step must sample:
+
+- From known real data: `samples_per_class` images per known class.
+- From missing packets: `samples_per_class` images per missing class.
+
+Packet sampling may use replacement.
+
+## Social Head Loss
+
+Use separate weights:
+
+```yaml
+social_head:
+  lambda_packet_ce: 1.0
+  lambda_packet_kd: 1.0
+  lambda_known_ce: 1.0
+  lambda_retain: 1.0
+```
+
+Loss terms:
+
+- `lambda_known_ce`: CE on known real images.
+- `lambda_packet_ce`: CE on missing packet images.
+- `lambda_packet_kd`: KD from packet soft targets on missing packet images.
+- `lambda_retain`: retain loss on known real images, using the frozen local head as teacher.
+
+## Configs
+
+Keep smoke and real experiments separate:
+
+- Smoke: `configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml`
+- Real: `configs/exp/2606-cifar10_partial6_global_raw_packet_real.yaml`
+
+The smoke config uses 1 epoch. The real config uses:
+
+- generalist epochs: 50
+- specialist epochs: 50
+- social_head epochs: 30
+
+## Expected Commands
+
+```bash
+python -m src.main.run_train_generalist --config configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml
+python -m src.main.run_train_specialists --config configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml --agent-ids all
+python -m src.main.run_build_generalist_packets --config configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml
+python -m src.main.run_train_social_head --config configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml --agent-ids all
+python -m src.main.run_eval_specialists --config configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml --checkpoint-stage local
+python -m src.main.run_eval_specialists --config configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml --checkpoint-stage social_head
+python -m src.main.run_compare_generalist --config configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml
+```
+
+## Git Rule
+
+After each completed implementation step, commit locally. Stop before `git push` and tell the user to run `git push` manually.

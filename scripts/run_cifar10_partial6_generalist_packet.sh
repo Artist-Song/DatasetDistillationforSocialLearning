@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG="configs/exp/2606-cifar10_partial6_global_raw_packet.yaml"
+CONFIG="${1:-configs/exp/2606-cifar10_partial6_global_raw_packet_smoke.yaml}"
 
 python -m src.main.run_train_generalist --config "${CONFIG}"
 python -m src.main.run_train_specialists --config "${CONFIG}" --agent-ids all

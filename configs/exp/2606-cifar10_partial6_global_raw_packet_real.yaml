@@ -19,19 +19,19 @@ model:
   norm_type: instance
 
 method:
-  name: generalist_guided_global_raw_packet_smoke
+  name: generalist_guided_global_raw_packet_real
 
 train:
-  epochs: 1
-  batch_size: 64
+  epochs: 50
+  batch_size: 128
   lr: 0.01
 
 generalist:
-  epochs: 1
+  epochs: 50
   lr: 0.01
 
 specialist:
-  epochs: 1
+  epochs: 50
   lr: 0.01
 
 packet:
@@ -43,11 +43,11 @@ packet:
   stage1_train_samples: 50000
 
 social_head:
-  epochs: 1
+  epochs: 30
   lr: 0.005
   weight_decay: 0.0005
-  samples_per_class: 4
-  steps_per_epoch: 10
+  samples_per_class: 8
+  steps_per_epoch: 200
   lambda_packet_ce: 1.0
   lambda_packet_kd: 1.0
   lambda_known_ce: 1.0
