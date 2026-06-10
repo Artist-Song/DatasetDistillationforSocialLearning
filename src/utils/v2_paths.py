@@ -17,3 +17,15 @@ def get_v2_dsdm_guide_dir(cfg: dict, agent_id: int) -> Path:
 
 def get_v2_packet_dir(cfg: dict, packet_source: str) -> Path:
     return get_v2_experiment_root(cfg) / "packets" / packet_source
+
+
+def get_v2_socialized_checkpoint_dir(cfg: dict, packet_source: str) -> Path:
+    return get_v2_experiment_root(cfg) / "checkpoints" / "socialized" / packet_source
+
+
+def get_v2_metrics_dir(cfg: dict) -> Path:
+    return get_v2_experiment_root(cfg) / "metrics"
+
+
+def get_v2_comparison_dir(cfg: dict) -> Path:
+    return get_v2_experiment_root(cfg) / "comparison"
