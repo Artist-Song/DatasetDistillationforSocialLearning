@@ -9,7 +9,7 @@ output:
 
 dataset:
   name: cifar10
-  root: ./datasets
+  root: ./data
   num_classes: 10
   image_size: [32, 32]
 

@@ -25,6 +25,12 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--no-download", action="store_true", help="Disable CIFAR download.")
     parser.add_argument(
+        "--dataset-root",
+        type=str,
+        default=None,
+        help="Override cfg.dataset.root; point this to the parent of cifar-10-batches-py.",
+    )
+    parser.add_argument(
         "--smoke-synthetic-samples",
         type=int,
         default=None,
@@ -172,6 +178,8 @@ def main():
     device = resolve_device(cfg.get("device", "cpu"))
     split_cfg = cfg["split"]
     dataset_cfg = cfg["dataset"]
+    if args.dataset_root is not None:
+        dataset_cfg["root"] = args.dataset_root
 
     if split_cfg["mode"] != "direct":
         raise NotImplementedError("run_train_agents_v2 supports split.mode=direct only")
@@ -201,6 +209,8 @@ def main():
     print(f"config: {args.config}")
     print(f"experiment: {cfg['experiment']['name']}")
     print(f"device: {device}")
+    print(f"dataset_root: {dataset_cfg['root']}")
+    print(f"download: {not args.no_download}")
     print(f"selected_agent_ids: {selected_agent_ids}")
     if args.smoke_synthetic_samples is not None:
         print(f"smoke_synthetic_samples: {args.smoke_synthetic_samples}")
