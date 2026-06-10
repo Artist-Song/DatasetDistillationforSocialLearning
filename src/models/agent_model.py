@@ -18,6 +18,7 @@
 import torch
 import torch.nn as nn
 
+from src.models.mlp_classifier import MLPClassifier
 from src.models.model_pool import build_backbone
 
 
@@ -44,6 +45,27 @@ class AgentModel(nn.Module):
             image_size=image_size,
             norm_type=norm_type,
         )
+        self._replace_classifier_with_mlp(num_classes)
+
+    def _replace_classifier_with_mlp(self, num_classes: int) -> None:
+        for attr_name in ["classifier", "fc", "head"]:
+            if not hasattr(self.backbone, attr_name):
+                continue
+            classifier = getattr(self.backbone, attr_name)
+            in_dim = self._infer_classifier_in_dim(classifier)
+            setattr(self.backbone, attr_name, MLPClassifier(in_dim, num_classes))
+            return
+        raise RuntimeError("backbone classifier not found; expected classifier, fc, or head")
+
+    @staticmethod
+    def _infer_classifier_in_dim(classifier: nn.Module) -> int:
+        if hasattr(classifier, "in_dim"):
+            return classifier.in_dim
+        if hasattr(classifier, "in_features"):
+            return classifier.in_features
+        if hasattr(classifier, "weight"):
+            return classifier.weight.shape[1]
+        raise RuntimeError("cannot infer classifier input dimension")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.backbone(x)

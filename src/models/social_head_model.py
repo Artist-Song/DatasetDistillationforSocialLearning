@@ -1,7 +1,8 @@
 """
-Wrapper model with a frozen local head and a trainable social head.
+Wrapper model with a frozen local classifier and a trainable copied social classifier.
 """
 
+import copy
 import torch
 import torch.nn as nn
 
@@ -11,6 +12,7 @@ from src.models.agent_model import AgentModel
 class SocialHeadAgent(nn.Module):
     def __init__(self, cfg, device: torch.device, feature_idx: int = None):
         super().__init__()
+        self.device = device
         self.local_model = AgentModel(
             model_name=cfg["model"]["name"],
             dataset=cfg["dataset"]["name"],
@@ -19,16 +21,7 @@ class SocialHeadAgent(nn.Module):
             norm_type=cfg["model"]["norm_type"],
         ).to(device)
         self.feature_idx = self._default_feature_idx() if feature_idx is None else feature_idx
-        feature_dim = self._classifier_in_features()
-        self.social_head = nn.Sequential(
-            nn.Linear(feature_dim, 512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, feature_dim),
-            nn.ReLU(),
-            nn.Linear(feature_dim, cfg["dataset"]["num_classes"]),
-        ).to(device)
+        self.social_head = copy.deepcopy(self._local_classifier()).to(device)
 
     def _backbone(self):
         return self.local_model.get_backbone()
@@ -60,14 +53,7 @@ class SocialHeadAgent(nn.Module):
         self.local_model.load_state_dict(state_dict)
 
     def init_social_head_from_local(self):
-        classifier = self._local_classifier()
-        if not hasattr(classifier, "weight"):
-            return
-        final_layer = self.social_head[-1]
-        with torch.no_grad():
-            final_layer.weight.copy_(classifier.weight)
-            if final_layer.bias is not None and getattr(classifier, "bias", None) is not None:
-                final_layer.bias.copy_(classifier.bias)
+        self.social_head = copy.deepcopy(self._local_classifier()).to(self.device)
 
     def freeze_backbone(self):
         for param in self._backbone().parameters():
@@ -79,16 +65,6 @@ class SocialHeadAgent(nn.Module):
 
     def train_social_head_only(self):
         for param in self.parameters():
-            param.requires_grad_(False)
-        for param in self.social_head.parameters():
-            param.requires_grad_(True)
-
-    def train_social_head_and_backbone(self):
-        for param in self.parameters():
-            param.requires_grad_(False)
-        for param in self._backbone().parameters():
-            param.requires_grad_(True)
-        for param in self._local_classifier().parameters():
             param.requires_grad_(False)
         for param in self.social_head.parameters():
             param.requires_grad_(True)

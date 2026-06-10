@@ -163,8 +163,6 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
     if train_mode == "social_head_only_balanced":
         model.freeze_backbone()
         model.train_social_head_only()
-    elif train_mode == "social_head_backbone_balanced":
-        model.train_social_head_and_backbone()
     else:
         raise ValueError(f"unknown social_head.train_mode: {train_mode}")
 
@@ -181,6 +179,7 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
     lambda_known_ce = social_cfg.get("lambda_known_ce", 1.0)
     lambda_retain = social_cfg.get("lambda_retain", 1.0)
     epochs = social_cfg.get("epochs", cfg["train"]["epochs"])
+    known_class_indices = torch.tensor(split.known, device=device, dtype=torch.long)
 
     print(f"\n=== train social head agent_{agent_id} ===")
     print(f"known_classes: {split.known}")
@@ -213,7 +212,10 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
             loss_packet_kd = kd_loss(packet_logits, packet_soft_targets, temperature)
             with torch.no_grad():
                 local_teacher_logits = teacher_model(known_images)
-            loss_retain = nn.functional.mse_loss(known_logits, local_teacher_logits)
+            loss_retain = nn.functional.mse_loss(
+                known_logits.index_select(dim=1, index=known_class_indices),
+                local_teacher_logits.index_select(dim=1, index=known_class_indices),
+            )
             loss = (
                 lambda_known_ce * loss_known_ce
                 + lambda_packet_ce * loss_packet_ce
