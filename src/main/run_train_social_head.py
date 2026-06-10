@@ -55,9 +55,9 @@ def load_packet_for_class(packet_dir: Path, class_id: int, experiment_id: str):
 def resolve_packet_source(source: str) -> str:
     if source == "global_raw":
         return "global_raw_packet"
-    if source == "global_raw_packet":
+    if source in ["global_raw_packet", "global_dsdm_packet"]:
         return source
-    raise NotImplementedError("social head training currently supports only global_raw_packet")
+    raise NotImplementedError("social head training currently supports global_raw_packet or global_dsdm_packet")
 
 
 def resolve_packet_dir(cfg, packet_read_root: Path):

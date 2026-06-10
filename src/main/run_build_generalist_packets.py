@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 
 from src.datasets.cifar import build_cifar_train_dataset
-from src.distill.simple_distiller import build_raw_images
+from src.distill.simple_distiller import build_raw_images, distill_images_with_dsdm
 from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.packet.packet_dataclass import SocialPacket
@@ -47,10 +47,31 @@ def resolve_packet_source(source: str) -> str:
         return "global_raw_packet"
     if source == "global_raw_packet":
         return source
+    if source == "global_dsdm_packet":
+        return source
     raise NotImplementedError(
-        "generalist packet version only supports packet.source=global_raw_packet "
-        "or backward-compatible alias global_raw"
+        "generalist packet version only supports packet.source=global_raw_packet, "
+        "global_dsdm_packet, or backward-compatible alias global_raw"
     )
+
+
+def build_packet_images(model, train_dataset, class_id: int, packet_cfg, canonical_source: str, device):
+    ipc = packet_cfg.get("ipc", 10)
+    if canonical_source == "global_raw_packet":
+        images, hard_labels = build_raw_images(train_dataset, [class_id], ipc)
+        return images, hard_labels, {"packet_type": "global_raw_x_q"}
+    if canonical_source == "global_dsdm_packet":
+        images, hard_labels, distill_meta = distill_images_with_dsdm(
+            anchor_model=model,
+            train_dataset=train_dataset,
+            class_ids=[class_id],
+            packet_cfg=packet_cfg,
+            device=device,
+        )
+        meta = {"packet_type": "global_dsdm_x_q"}
+        meta.update(distill_meta)
+        return images, hard_labels, meta
+    raise ValueError(f"unsupported packet source: {canonical_source}")
 
 
 def main():
@@ -122,7 +143,7 @@ def main():
     print(f"packet_dir: {packet_dir}")
 
     for class_id in range(cfg["dataset"]["num_classes"]):
-        images, hard_labels = build_raw_images(train_dataset, [class_id], ipc)
+        images, hard_labels, packet_meta = build_packet_images(model, train_dataset, class_id, packet_cfg, canonical_source, device)
         soft_targets = build_soft_targets(model, images, temperature, device)
         packet = SocialPacket(
             sender_id="generalist",
@@ -131,7 +152,7 @@ def main():
             hard_labels=hard_labels.cpu(),
             soft_targets=soft_targets,
             meta={
-                "packet_type": "global_raw_x_q",
+                **packet_meta,
                 "packet_source": canonical_source,
                 "packet_source_alias": source,
                 "ipc": ipc,
