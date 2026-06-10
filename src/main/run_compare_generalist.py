@@ -3,12 +3,13 @@ Compare local specialists with generalist-packet social-head specialists.
 """
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
 from src.datasets.splits import get_partial_split
 from src.utils.config import load_yaml
-from src.utils.experiment import assert_report_experiment, get_experiment_id, get_experiment_metadata, get_experiment_root
+from src.utils.experiment import assert_report_experiment, get_experiment_id, get_experiment_metadata, get_experiment_root, save_experiment_files, validate_reuse
 
 
 def parse_args():
@@ -59,9 +60,52 @@ def estimate_communication(cfg, num_agents: int, missing_per_agent: int):
     }
 
 
+def write_json(path: Path, payload):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def write_agents_csv(path: Path, rows):
+    fieldnames = [
+        "experiment_id",
+        "agent_id",
+        "known_accuracy",
+        "missing_accuracy",
+        "general_accuracy",
+        "delta_known_accuracy",
+        "delta_missing_accuracy",
+        "delta_general_accuracy",
+    ]
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "experiment_id": row["experiment_id"],
+                    "agent_id": row["agent_id"],
+                    "known_accuracy": row["social_head"]["known_accuracy"],
+                    "missing_accuracy": row["social_head"]["missing_accuracy"],
+                    "general_accuracy": row["social_head"]["general_accuracy"],
+                    "delta_known_accuracy": row["delta_known_accuracy"],
+                    "delta_missing_accuracy": row["delta_missing_accuracy"],
+                    "delta_general_accuracy": row["delta_general_accuracy"],
+                }
+            )
+
+
+def write_metrics_csv(path: Path, row):
+    fieldnames = list(row.keys())
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(row)
+
+
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    validate_reuse(cfg, args.config)
     experiment_id = get_experiment_id(cfg, args.config)
     experiment_root = get_experiment_root(cfg, args.config)
     experiment = get_experiment_metadata(cfg, args.config)
@@ -79,6 +123,7 @@ def main():
         agent_id = social_item["agent_id"]
         local_item = local_by_agent[agent_id]
         row = {
+            "experiment_id": experiment_id,
             "agent_id": agent_id,
             "known_classes": social_item["known_classes"],
             "missing_classes": social_item["missing_classes"],
@@ -131,9 +176,44 @@ def main():
     print(f"stage2_missing_packet_mib: {communication['stage2_missing_packet_mib']:.4f}")
 
     report_path = report_dir / f"compare_generalist_{agent_suffix}.json"
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+    save_experiment_files(cfg, args.config, {"compare_report_dir": str(report_dir)})
+    write_json(report_path, results)
+    summary_path = report_dir / "summary.json"
+    write_json(
+        summary_path,
+        {
+            "experiment_id": experiment_id,
+            "experiment": experiment,
+            "summary": summary,
+            "communication": communication,
+            "local_report": str(local_path),
+            "social_head_report": str(social_path),
+            "compare_report": str(report_path),
+        },
+    )
+    metrics_row = {
+        "experiment_id": experiment_id,
+        "source_experiment_id": experiment.get("source_experiment_id"),
+        "config_path": experiment.get("config_path"),
+        "packet_source": cfg.get("packet", {}).get("source"),
+        "ipc": cfg.get("packet", {}).get("ipc"),
+        "social_epochs": cfg.get("social_head", {}).get("epochs"),
+        "samples_per_class": cfg.get("social_head", {}).get("samples_per_class"),
+        "steps_per_epoch": cfg.get("social_head", {}).get("steps_per_epoch"),
+        "lambda_packet_ce": cfg.get("social_head", {}).get("lambda_packet_ce"),
+        "lambda_packet_kd": cfg.get("social_head", {}).get("lambda_packet_kd"),
+        "lambda_known_ce": cfg.get("social_head", {}).get("lambda_known_ce"),
+        "lambda_retain": cfg.get("social_head", {}).get("lambda_retain"),
+        **summary,
+        "stage1_generalist_training_mib": communication["stage1_generalist_training_mib"],
+        "stage2_missing_packet_mib": communication["stage2_missing_packet_mib"],
+    }
+    write_agents_csv(report_dir / "agents.csv", agents)
+    write_metrics_csv(report_dir / "metrics.csv", metrics_row)
     print(f"saved_report: {report_path}")
+    print(f"saved_summary: {summary_path}")
+    print(f"saved_agents_csv: {report_dir / 'agents.csv'}")
+    print(f"saved_metrics_csv: {report_dir / 'metrics.csv'}")
 
 
 if __name__ == "__main__":

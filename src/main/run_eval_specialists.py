@@ -17,7 +17,16 @@ from src.main.run_local_pretrain import resolve_device
 from src.models.social_head_model import SocialHeadAgent
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
-from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
+from src.utils.experiment import (
+    get_experiment_id,
+    get_experiment_metadata,
+    get_experiment_root,
+    get_stage_expected_experiment_id,
+    get_stage_read_root,
+    require_experiment_id,
+    save_experiment_files,
+    validate_reuse,
+)
 from src.utils.seed import set_seed
 
 
@@ -53,9 +62,9 @@ def make_loader(dataset, cfg, device):
     )
 
 
-def load_stage_model(cfg, device, agent_id: int, stage: str, experiment_root: Path, experiment_id: str):
+def load_stage_model(cfg, device, agent_id: int, stage: str, experiment_root: Path, specialist_read_root: Path, expected_experiment_id: str):
     if stage == "local":
-        ckpt_path = experiment_root / "checkpoints" / "specialists" / f"agent_{agent_id}_specialist.pt"
+        ckpt_path = specialist_read_root / "checkpoints" / "specialists" / f"agent_{agent_id}_specialist.pt"
         model = build_model(cfg, device)
         head = None
     else:
@@ -66,22 +75,21 @@ def load_stage_model(cfg, device, agent_id: int, stage: str, experiment_root: Pa
     if not ckpt_path.exists():
         raise FileNotFoundError(f"checkpoint not found: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location=device)
-    ckpt_experiment_id = ckpt.get("experiment_id")
-    if ckpt_experiment_id != experiment_id:
-        raise RuntimeError(
-            f"checkpoint experiment_id mismatch for {ckpt_path}: "
-            f"expected {experiment_id}, got {ckpt_experiment_id}"
-        )
+    require_experiment_id(ckpt.get("experiment_id"), expected_experiment_id, ckpt_path, cfg)
     model.load_state_dict(ckpt["model_state_dict"])
-    return model, head, ckpt_path
+    return model, head, ckpt_path, ckpt.get("experiment_id")
 
 
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    validate_reuse(cfg, args.config)
     experiment_id = get_experiment_id(cfg, args.config)
     experiment_root = get_experiment_root(cfg, args.config)
     experiment = get_experiment_metadata(cfg, args.config)
+    specialist_read_root = get_stage_read_root(cfg, "specialists", args.config)
+    expected_local_experiment_id = get_stage_expected_experiment_id(cfg, "specialists", args.config)
+    expected_social_experiment_id = experiment_id
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -98,6 +106,7 @@ def main():
     print(f"=== run_eval_specialists {args.checkpoint_stage} ===")
     print(f"experiment_id: {experiment_id}")
     print(f"experiment_root: {experiment_root}")
+    print(f"specialist_read_root: {specialist_read_root}")
     print(f"device: {device}")
     print(f"selected_agent_ids: {selected_agent_ids}")
 
@@ -108,6 +117,8 @@ def main():
         "dataset": cfg["dataset"]["name"],
         "split_name": cfg["split"]["name"],
         "selected_agent_ids": selected_agent_ids,
+        "source_experiment_id": experiment.get("source_experiment_id"),
+        "reuse": experiment.get("reuse"),
         "agents": [],
     }
     known_accs = []
@@ -116,7 +127,16 @@ def main():
 
     for agent_id in selected_agent_ids:
         split = splits[agent_id]
-        model, head, ckpt_path = load_stage_model(cfg, device, agent_id, args.checkpoint_stage, experiment_root, experiment_id)
+        expected_experiment_id = expected_local_experiment_id if args.checkpoint_stage == "local" else expected_social_experiment_id
+        model, head, ckpt_path, ckpt_experiment_id = load_stage_model(
+            cfg,
+            device,
+            agent_id,
+            args.checkpoint_stage,
+            experiment_root,
+            specialist_read_root,
+            expected_experiment_id,
+        )
         known_loader = make_loader(subset_by_classes(test_dataset, split.known), cfg, device)
         missing_loader = make_loader(subset_by_classes(test_dataset, split.missing), cfg, device)
 
@@ -133,6 +153,8 @@ def main():
                 "known_classes": split.known,
                 "missing_classes": split.missing,
                 "checkpoint": str(ckpt_path),
+                "checkpoint_path": str(ckpt_path),
+                "checkpoint_experiment_id": ckpt_experiment_id,
                 "known_accuracy": known_acc,
                 "missing_accuracy": missing_acc,
                 "general_accuracy": general_acc,
@@ -154,6 +176,14 @@ def main():
 
     report_dir = experiment_root / "reports" / "generalist_packet"
     report_dir.mkdir(parents=True, exist_ok=True)
+    save_experiment_files(
+        cfg,
+        args.config,
+        {
+            "specialist_read_root": str(specialist_read_root),
+            "eval_report_dir": str(report_dir),
+        },
+    )
     agent_suffix = "all" if args.agent_ids == "all" else args.agent_ids.replace(",", "_").replace("-", "to")
     report_path = report_dir / f"eval_{args.checkpoint_stage}_{agent_suffix}.json"
     with open(report_path, "w", encoding="utf-8") as f:

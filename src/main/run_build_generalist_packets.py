@@ -14,7 +14,18 @@ from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.packet.packet_dataclass import SocialPacket
 from src.utils.config import load_yaml
-from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
+from src.utils.experiment import (
+    get_experiment_id,
+    get_experiment_metadata,
+    get_experiment_root,
+    get_reuse_cfg,
+    get_stage_expected_experiment_id,
+    get_stage_read_root,
+    require_experiment_id,
+    require_packet_dir,
+    save_experiment_files,
+    validate_reuse,
+)
 from src.utils.seed import set_seed
 
 
@@ -45,9 +56,11 @@ def resolve_packet_source(source: str) -> str:
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    validate_reuse(cfg, args.config)
     experiment_id = get_experiment_id(cfg, args.config)
     experiment_root = get_experiment_root(cfg, args.config)
     experiment = get_experiment_metadata(cfg, args.config)
+    reuse = get_reuse_cfg(cfg)
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -57,17 +70,29 @@ def main():
     ipc = packet_cfg.get("ipc", 10)
     temperature = packet_cfg.get("temperature", 2.0)
 
-    ckpt_path = experiment_root / "checkpoints" / "generalist" / "generalist.pt"
+    packet_read_root = get_stage_read_root(cfg, "packets", args.config)
+    source_packet_dir = packet_read_root / "packets" / "generalist" / canonical_source
+    if reuse["packets"]:
+        require_packet_dir(source_packet_dir, cfg["dataset"]["num_classes"])
+        print("=== run_build_generalist_packets ===")
+        print(f"experiment_id: {experiment_id}")
+        print(f"reuse.packets=true; skipping packet build")
+        print(f"source_packet_dir: {source_packet_dir}")
+        save_experiment_files(
+            cfg,
+            args.config,
+            {"packet_read_dir": str(source_packet_dir), "packet_write_dir": None},
+        )
+        return
+
+    generalist_read_root = get_stage_read_root(cfg, "generalist", args.config)
+    generalist_expected_experiment_id = get_stage_expected_experiment_id(cfg, "generalist", args.config)
+    ckpt_path = generalist_read_root / "checkpoints" / "generalist" / "generalist.pt"
     if not ckpt_path.exists():
         raise FileNotFoundError(f"generalist checkpoint not found: {ckpt_path}")
     model = build_model(cfg, device)
     ckpt = torch.load(ckpt_path, map_location=device)
-    ckpt_experiment_id = ckpt.get("experiment_id")
-    if ckpt_experiment_id != experiment_id:
-        raise RuntimeError(
-            f"generalist checkpoint experiment_id mismatch for {ckpt_path}: "
-            f"expected {experiment_id}, got {ckpt_experiment_id}"
-        )
+    require_experiment_id(ckpt.get("experiment_id"), generalist_expected_experiment_id, ckpt_path, cfg, args.config)
     model.load_state_dict(ckpt["model_state_dict"])
 
     train_dataset = build_cifar_train_dataset(
@@ -78,10 +103,19 @@ def main():
     )
     packet_dir = experiment_root / "packets" / "generalist" / canonical_source
     packet_dir.mkdir(parents=True, exist_ok=True)
+    save_experiment_files(
+        cfg,
+        args.config,
+        {
+            "generalist_checkpoint_path": str(ckpt_path),
+            "packet_write_dir": str(packet_dir),
+        },
+    )
 
     print("=== run_build_generalist_packets ===")
     print(f"experiment_id: {experiment_id}")
     print(f"experiment_root: {experiment_root}")
+    print(f"generalist_read_root: {generalist_read_root}")
     print(f"source: {source}")
     print(f"canonical_source: {canonical_source}")
     print(f"ipc: {ipc}")

@@ -17,7 +17,17 @@ from src.main.run_local_pretrain import resolve_device
 from src.models.social_head_model import SocialHeadAgent
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
-from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
+from src.utils.experiment import (
+    get_experiment_id,
+    get_experiment_metadata,
+    get_experiment_root,
+    get_stage_expected_experiment_id,
+    get_stage_read_root,
+    require_experiment_id,
+    require_packet_dir,
+    save_experiment_files,
+    validate_reuse,
+)
 from src.utils.seed import set_seed
 
 
@@ -50,10 +60,10 @@ def resolve_packet_source(source: str) -> str:
     raise NotImplementedError("social head training currently supports only global_raw_packet")
 
 
-def resolve_packet_dir(cfg, experiment_root: Path):
+def resolve_packet_dir(cfg, packet_read_root: Path):
     source = cfg.get("packet", {}).get("source", "global_raw_packet")
     canonical_source = resolve_packet_source(source)
-    packet_root = experiment_root / "packets" / "generalist"
+    packet_root = packet_read_root / "packets" / "generalist"
     packet_dir = packet_root / canonical_source
     if not packet_dir.exists() and source != canonical_source:
         alias_dir = packet_root / source
@@ -133,23 +143,31 @@ def count_trainable_parameters(model):
     return sum(param.numel() for param in model.parameters() if param.requires_grad)
 
 
-def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root: Path, packet_dir: Path, save_dir: Path, experiment_id, experiment):
+def train_one_agent(
+    agent_id,
+    split,
+    cfg,
+    train_dataset,
+    device,
+    specialist_read_root: Path,
+    packet_dir: Path,
+    save_dir: Path,
+    experiment_id,
+    experiment,
+    specialist_expected_experiment_id: str,
+    packet_expected_experiment_id: str,
+):
     social_cfg = cfg.get("social_head", cfg.get("social", {}))
     train_mode = social_cfg.get("train_mode", "social_head_only_balanced")
     samples_per_class = social_cfg.get("samples_per_class", social_cfg.get("k_per_class", 4))
     steps_per_epoch = social_cfg.get("steps_per_epoch", 100)
-    sampler = ClassBalancedStepSampler(train_dataset, split.known, split.missing, packet_dir, samples_per_class, experiment_id)
+    sampler = ClassBalancedStepSampler(train_dataset, split.known, split.missing, packet_dir, samples_per_class, packet_expected_experiment_id)
 
-    local_ckpt_path = experiment_root / "checkpoints" / "specialists" / f"agent_{agent_id}_specialist.pt"
+    local_ckpt_path = specialist_read_root / "checkpoints" / "specialists" / f"agent_{agent_id}_specialist.pt"
     if not local_ckpt_path.exists():
         raise FileNotFoundError(f"specialist checkpoint not found: {local_ckpt_path}")
     local_ckpt = torch.load(local_ckpt_path, map_location=device)
-    ckpt_experiment_id = local_ckpt.get("experiment_id")
-    if ckpt_experiment_id != experiment_id:
-        raise RuntimeError(
-            f"specialist checkpoint experiment_id mismatch for {local_ckpt_path}: "
-            f"expected {experiment_id}, got {ckpt_experiment_id}"
-        )
+    require_experiment_id(local_ckpt.get("experiment_id"), specialist_expected_experiment_id, local_ckpt_path, cfg)
 
     model = SocialHeadAgent(cfg, device=device, feature_idx=social_cfg.get("feature_idx"))
     model.load_local_state_dict(local_ckpt["model_state_dict"])
@@ -235,6 +253,8 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
             )
 
     save_path = save_dir / f"agent_{agent_id}_social_head.pt"
+    if save_path.exists():
+        print(f"WARNING: overwriting existing social_head checkpoint: {save_path}")
     torch.save(
         {
             "agent_id": agent_id,
@@ -243,6 +263,11 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
             "stage": "social_head",
             "experiment_id": experiment_id,
             "experiment": experiment,
+            "source_experiment_id": experiment.get("source_experiment_id"),
+            "specialist_checkpoint_path": str(local_ckpt_path),
+            "specialist_checkpoint_experiment_id": local_ckpt.get("experiment_id"),
+            "packet_dir": str(packet_dir),
+            "packet_experiment_id": packet_expected_experiment_id,
             "model_state_dict": model.state_dict(),
             "local_model_state_dict": model.local_model.state_dict(),
             "cfg": cfg,
@@ -255,9 +280,14 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, experiment_root
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    validate_reuse(cfg, args.config)
     experiment_id = get_experiment_id(cfg, args.config)
     experiment_root = get_experiment_root(cfg, args.config)
     experiment = get_experiment_metadata(cfg, args.config)
+    specialist_read_root = get_stage_read_root(cfg, "specialists", args.config)
+    packet_read_root = get_stage_read_root(cfg, "packets", args.config)
+    specialist_expected_experiment_id = get_stage_expected_experiment_id(cfg, "specialists", args.config)
+    packet_expected_experiment_id = get_stage_expected_experiment_id(cfg, "packets", args.config)
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -269,13 +299,25 @@ def main():
         image_size=tuple(cfg["dataset"]["image_size"]),
         download=True,
     )
-    packet_dir, packet_source = resolve_packet_dir(cfg, experiment_root)
+    packet_dir, packet_source = resolve_packet_dir(cfg, packet_read_root)
+    require_packet_dir(packet_dir, cfg["dataset"]["num_classes"])
     save_dir = experiment_root / "checkpoints" / "social_head"
     save_dir.mkdir(parents=True, exist_ok=True)
+    save_experiment_files(
+        cfg,
+        args.config,
+        {
+            "specialist_read_root": str(specialist_read_root),
+            "packet_read_root": str(packet_read_root),
+            "social_head_write_dir": str(save_dir),
+        },
+    )
 
     print("=== run_train_social_head ===")
     print(f"experiment_id: {experiment_id}")
     print(f"experiment_root: {experiment_root}")
+    print(f"specialist_read_root: {specialist_read_root}")
+    print(f"packet_read_root: {packet_read_root}")
     print(f"device: {device}")
     print(f"selected_agent_ids: {selected_agent_ids}")
     print(f"packet_dir: {packet_dir}")
@@ -288,11 +330,13 @@ def main():
             cfg,
             train_dataset,
             device,
-            experiment_root,
+            specialist_read_root,
             packet_dir,
             save_dir,
             experiment_id,
             experiment,
+            specialist_expected_experiment_id,
+            packet_expected_experiment_id,
         )
 
 

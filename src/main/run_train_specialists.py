@@ -17,7 +17,7 @@ from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
-from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
+from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root, get_reuse_cfg, save_experiment_files, validate_reuse
 from src.utils.seed import set_seed
 
 
@@ -91,9 +91,17 @@ def train_one_agent(agent_id, split, cfg, train_dataset, device, save_dir, exper
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    validate_reuse(cfg, args.config)
     experiment_id = get_experiment_id(cfg, args.config)
     experiment_root = get_experiment_root(cfg, args.config)
     experiment = get_experiment_metadata(cfg, args.config)
+    reuse = get_reuse_cfg(cfg)
+    if reuse["specialists"]:
+        print("=== run_train_specialists ===")
+        print(f"experiment_id: {experiment_id}")
+        print("reuse.specialists=true; skipping specialist training")
+        save_experiment_files(cfg, args.config, {"specialists_read_root": str(experiment.get("source_experiment_root"))})
+        return
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -108,6 +116,7 @@ def main():
     )
     save_dir = experiment_root / "checkpoints" / "specialists"
     save_dir.mkdir(parents=True, exist_ok=True)
+    save_experiment_files(cfg, args.config, {"specialists_write_dir": str(save_dir)})
 
     print("=== run_train_specialists ===")
     print(f"experiment_id: {experiment_id}")

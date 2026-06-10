@@ -15,7 +15,7 @@ from src.datasets.cifar import build_cifar_train_dataset
 from src.main.run_eval import build_model
 from src.main.run_local_pretrain import resolve_device
 from src.utils.config import load_yaml
-from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root
+from src.utils.experiment import get_experiment_id, get_experiment_metadata, get_experiment_root, get_reuse_cfg, save_experiment_files, validate_reuse
 from src.utils.seed import set_seed
 
 
@@ -28,9 +28,17 @@ def parse_args():
 def main():
     args = parse_args()
     cfg = load_yaml(args.config)
+    validate_reuse(cfg, args.config)
     experiment_id = get_experiment_id(cfg, args.config)
     experiment_root = get_experiment_root(cfg, args.config)
     experiment = get_experiment_metadata(cfg, args.config)
+    reuse = get_reuse_cfg(cfg)
+    if reuse["generalist"]:
+        print("=== run_train_generalist ===")
+        print(f"experiment_id: {experiment_id}")
+        print("reuse.generalist=true; skipping generalist training")
+        save_experiment_files(cfg, args.config, {"generalist_read_root": str(experiment.get("source_experiment_root"))})
+        return
     set_seed(cfg["seed"])
     device = resolve_device(cfg.get("device", "cpu"))
 
@@ -87,6 +95,7 @@ def main():
 
     save_dir = experiment_root / "checkpoints" / "generalist"
     save_dir.mkdir(parents=True, exist_ok=True)
+    save_experiment_files(cfg, args.config, {"generalist_write_dir": str(save_dir)})
     save_path = save_dir / "generalist.pt"
     torch.save(
         {
