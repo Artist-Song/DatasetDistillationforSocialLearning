@@ -13,3 +13,7 @@ def get_v2_agent_checkpoint_dir(cfg: dict) -> Path:
 
 def get_v2_dsdm_guide_dir(cfg: dict, agent_id: int) -> Path:
     return get_v2_experiment_root(cfg) / "checkpoints" / "dsdm_guides" / f"agent_{agent_id}"
+
+
+def get_v2_packet_dir(cfg: dict, packet_source: str) -> Path:
+    return get_v2_experiment_root(cfg) / "packets" / packet_source
