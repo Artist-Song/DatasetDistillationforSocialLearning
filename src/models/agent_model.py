@@ -18,7 +18,7 @@
 import torch
 import torch.nn as nn
 
-from src.models.mlp_classifier import MLPClassifier
+from src.models.heads import build_head
 from src.models.model_pool import build_backbone
 
 
@@ -30,6 +30,9 @@ class AgentModel(nn.Module):
         num_classes: int,
         image_size=(32, 32),
         norm_type: str = "instance",
+        head_type: str = "shallow_mlp",
+        head_hidden_dim: int = 512,
+        head_dropout: float = 0.1,
     ):
         super().__init__()
         self.model_name = model_name
@@ -37,6 +40,9 @@ class AgentModel(nn.Module):
         self.num_classes = num_classes
         self.image_size = image_size
         self.norm_type = norm_type
+        self.head_type = head_type
+        self.head_hidden_dim = head_hidden_dim
+        self.head_dropout = head_dropout
 
         self.backbone = build_backbone(
             name=model_name,
@@ -45,15 +51,25 @@ class AgentModel(nn.Module):
             image_size=image_size,
             norm_type=norm_type,
         )
-        self._replace_classifier_with_mlp(num_classes)
+        self._replace_classifier_head(num_classes)
 
-    def _replace_classifier_with_mlp(self, num_classes: int) -> None:
+    def _replace_classifier_head(self, num_classes: int) -> None:
         for attr_name in ["classifier", "fc", "head"]:
             if not hasattr(self.backbone, attr_name):
                 continue
             classifier = getattr(self.backbone, attr_name)
             in_dim = self._infer_classifier_in_dim(classifier)
-            setattr(self.backbone, attr_name, MLPClassifier(in_dim, num_classes))
+            setattr(
+                self.backbone,
+                attr_name,
+                build_head(
+                    self.head_type,
+                    in_dim,
+                    num_classes,
+                    hidden_dim=self.head_hidden_dim,
+                    dropout=self.head_dropout,
+                ),
+            )
             return
         raise RuntimeError("backbone classifier not found; expected classifier, fc, or head")
 
@@ -72,3 +88,31 @@ class AgentModel(nn.Module):
 
     def get_backbone(self) -> nn.Module:
         return self.backbone
+
+
+def _agent_model_name(cfg: dict, agent_id: int) -> str:
+    agent_models = cfg.get("agent_models", {})
+    if agent_id in agent_models:
+        return agent_models[agent_id]
+    if str(agent_id) in agent_models:
+        return agent_models[str(agent_id)]
+    model_cfg = cfg.get("model", {})
+    if "name" in model_cfg:
+        return model_cfg["name"]
+    raise KeyError(f"model type for agent_id={agent_id} not found in cfg['agent_models']")
+
+
+def build_agent_model(cfg: dict, agent_id: int, device: torch.device):
+    model_cfg = cfg.get("model", {})
+    dataset_cfg = cfg["dataset"]
+    model = AgentModel(
+        model_name=_agent_model_name(cfg, agent_id),
+        dataset=dataset_cfg["name"],
+        num_classes=dataset_cfg["num_classes"],
+        image_size=tuple(dataset_cfg.get("image_size", (32, 32))),
+        norm_type=model_cfg.get("norm_type", "instance"),
+        head_type=model_cfg.get("head_type", "shallow_mlp"),
+        head_hidden_dim=model_cfg.get("head_hidden_dim", 512),
+        head_dropout=model_cfg.get("head_dropout", 0.1),
+    )
+    return model.to(device)

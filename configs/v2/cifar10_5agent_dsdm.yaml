@@ -1,0 +1,59 @@
+seed: 1
+device: cuda:0
+
+experiment:
+  name: cifar10_5agent_v2_dsdm
+
+output:
+  root: outputs/v2
+
+dataset:
+  name: cifar10
+  root: ./datasets
+  num_classes: 10
+  image_size: [32, 32]
+
+split:
+  mode: direct
+  num_agents: 5
+  classes_per_agent: 2
+
+agent_models:
+  0: conv
+  1: resnet
+  2: resnet_ap
+  3: conv
+  4: resnet
+
+model:
+  head_type: shallow_mlp
+  head_hidden_dim: 512
+  head_dropout: 0.1
+  norm_type: instance
+
+train:
+  batch_size: 128
+  epochs: 100
+  lr: 0.01
+
+packet:
+  ipc: 10
+  source: strict_dsdm
+
+dsdm:
+  strict: true
+  guide_model_number: 10
+  guide_pretrain_epochs: 20
+  distill_steps: 10000
+  cov_weight: 50.0
+  h_p_weight: 0.2
+  smooth_factor: 0.99
+
+social:
+  phase_a_epochs: 20
+  phase_b_epochs: 20
+  lr_head: 0.01
+  lr_last_block: 0.001
+  samples_per_class: 8
+  steps_per_epoch: 100
+  lambda_anchor: 0.01
