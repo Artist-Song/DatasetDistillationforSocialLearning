@@ -37,7 +37,7 @@ train:
   lr: 0.01
 
 packet:
-  ipc: 10
+  ipc: 50
   source: raw
 
 dsdm:
@@ -45,6 +45,18 @@ dsdm:
   guide_model_number: 10
   guide_pretrain_epochs: 20
   distill_steps: 10000
+  distill_lr: 0.005
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  dsdm_init: random
+  factor: 1
+  decode_type: single
+  aug_type: color_crop_cutout
+  idx_from: 0
+  idx_to: -1
+  metric: l1
+  smooth_iter: 2000
   cov_weight: 50.0
   h_p_weight: 0.2
   smooth_factor: 0.99

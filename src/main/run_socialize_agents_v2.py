@@ -146,6 +146,13 @@ def load_other_packets(cfg: dict, receiver_id: int, packet_source: str, num_agen
         if not packet_path.exists():
             continue
         packet: SocialPacket = torch_load(packet_path, map_location="cpu")
+        expected_ipc = int(cfg["packet"]["ipc"])
+        actual_ipc = int((packet.meta or {}).get("ipc", -1))
+        if actual_ipc != expected_ipc:
+            raise RuntimeError(
+                f"packet IPC mismatch for {packet_path}: found {actual_ipc}, expected {expected_ipc}. "
+                "Rebuild packets with run_build_packets_v2 before socialization."
+            )
         packets.append(packet)
         meta = dict(packet.meta)
         meta.setdefault("sender_id", int(packet.sender_id))

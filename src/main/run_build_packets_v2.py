@@ -146,6 +146,20 @@ def save_packet_visuals(cfg: dict, packet_source: str, packet: SocialPacket):
     return grid_path
 
 
+def packet_matches_request(packet: SocialPacket, packet_source: str, class_ids: List[int], ipc: int) -> Tuple[bool, str]:
+    meta = packet.meta or {}
+    if meta.get("packet_source") != packet_source:
+        return False, f"packet_source {meta.get('packet_source')} != {packet_source}"
+    if list(packet.class_ids) != list(class_ids):
+        return False, f"class_ids {list(packet.class_ids)} != {list(class_ids)}"
+    if int(meta.get("ipc", -1)) != int(ipc):
+        return False, f"ipc {meta.get('ipc')} != {ipc}"
+    expected_images = len(class_ids) * ipc
+    if int(packet.images.shape[0]) != expected_images:
+        return False, f"image_count {int(packet.images.shape[0])} != {expected_images}"
+    return True, "matched"
+
+
 def build_raw_packet(sender_id: int, class_ids: List[int], train_dataset, cfg: dict):
     ipc = cfg["packet"]["ipc"]
     images, hard_labels = build_raw_images(train_dataset, class_ids, ipc)
@@ -193,14 +207,17 @@ def build_sender_packet(sender_id: int, class_ids: List[int], train_dataset, cfg
     packet_dir = get_v2_packet_dir(cfg, packet_source)
     packet_path = packet_dir / f"agent_{sender_id}_packet.pt"
     if args.skip_existing and packet_path.exists():
-        if not args.no_visuals:
-            packet = torch_load(packet_path, map_location="cpu")
-            visual_path = get_v2_packet_visual_dir(cfg, packet_source) / f"agent_{sender_id}_packet_grid.png"
-            if not visual_path.exists():
-                save_packet_visuals(cfg, packet_source, packet)
-                torch.save(packet, packet_path)
-        print(f"skip existing: {packet_path}")
-        return None
+        packet = torch_load(packet_path, map_location="cpu")
+        matches_request, reason = packet_matches_request(packet, packet_source, class_ids, cfg["packet"]["ipc"])
+        if matches_request:
+            if not args.no_visuals:
+                visual_path = get_v2_packet_visual_dir(cfg, packet_source) / f"agent_{sender_id}_packet_grid.png"
+                if not visual_path.exists():
+                    save_packet_visuals(cfg, packet_source, packet)
+                    torch.save(packet, packet_path)
+            print(f"skip existing: {packet_path}")
+            return None
+        print(f"rebuild existing packet: {packet_path} ({reason})")
 
     print(f"\n=== build {packet_source} packet agent_{sender_id} ===")
     print(f"class_ids: {class_ids}")
