@@ -212,12 +212,14 @@ def train_phase(
         raise RuntimeError(f"{phase_name}: no trainable parameters")
     optimizer = torch.optim.SGD(params, lr=lr, momentum=0.9, weight_decay=5e-4)
     criterion = nn.CrossEntropyLoss()
-    print(f"{phase_name} trainable params: {list(trainable_names)}")
+    trainable_names = list(trainable_names)
+    print(f"{phase_name} trainable param tensors: {len(trainable_names)}")
 
     final_loss = None
     final_acc = None
     with StageTimer(phase_name):
-        for epoch in progress(range(epochs), desc=f"{phase_name} epochs"):
+        epoch_bar = progress(range(epochs), desc=f"{phase_name} epochs", leave=False)
+        for _epoch in epoch_bar:
             final_loss, final_acc = train_epoch(
                 model=model,
                 loader=loader,
@@ -228,7 +230,9 @@ def train_phase(
                 lambda_anchor=lambda_anchor,
                 anchor_state=anchor_state,
             )
-            print(f"{phase_name} epoch {epoch + 1}/{epochs}: loss={final_loss:.4f} acc={final_acc:.4f}")
+            if hasattr(epoch_bar, "set_postfix"):
+                epoch_bar.set_postfix(loss=f"{final_loss:.4f}", acc=f"{final_acc:.4f}")
+    print(f"{phase_name} final: loss={final_loss:.4f} acc={final_acc:.4f}")
     return {"epochs": epochs, "final_loss": float(final_loss), "final_acc": float(final_acc)}
 
 

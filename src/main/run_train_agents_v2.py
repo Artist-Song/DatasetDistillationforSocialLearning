@@ -82,7 +82,8 @@ def train_agent(agent_id: int, cfg: dict, train_dataset, class_splits, device: t
     final_loss = None
     final_acc = None
     with StageTimer(f"train expert agent_{agent_id}"):
-        for epoch in progress(range(epochs), desc=f"agent_{agent_id} expert epochs"):
+        epoch_bar = progress(range(epochs), desc=f"agent_{agent_id} expert epochs", leave=False)
+        for _epoch in epoch_bar:
             final_loss, final_acc = train_one_epoch(
                 model=model,
                 loader=loader,
@@ -91,7 +92,9 @@ def train_agent(agent_id: int, cfg: dict, train_dataset, class_splits, device: t
                 device=device,
                 max_batches=args.max_batches,
             )
-            print(f"agent_{agent_id} epoch {epoch + 1}/{epochs}: loss={final_loss:.4f} acc={final_acc:.4f}")
+            if hasattr(epoch_bar, "set_postfix"):
+                epoch_bar.set_postfix(loss=f"{final_loss:.4f}", acc=f"{final_acc:.4f}")
+    print(f"agent_{agent_id} expert final: loss={final_loss:.4f} acc={final_acc:.4f}")
 
     ckpt_dir = get_v2_agent_checkpoint_dir(cfg)
     ckpt_dir.mkdir(parents=True, exist_ok=True)

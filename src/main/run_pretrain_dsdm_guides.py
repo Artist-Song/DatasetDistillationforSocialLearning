@@ -103,7 +103,8 @@ def train_guide(agent_id: int, guide_id: int, cfg: dict, agent_dataset, expert_c
     final_loss = None
     final_acc = None
     with StageTimer(f"pretrain DSDM guide agent_{agent_id} guide_{guide_id}"):
-        for epoch in progress(range(epochs), desc=f"agent_{agent_id} guide_{guide_id} epochs"):
+        epoch_bar = progress(range(epochs), desc=f"agent_{agent_id} guide_{guide_id} epochs", leave=False)
+        for _epoch in epoch_bar:
             final_loss, final_acc = train_one_epoch(
                 model=model,
                 loader=loader,
@@ -112,10 +113,9 @@ def train_guide(agent_id: int, guide_id: int, cfg: dict, agent_dataset, expert_c
                 device=device,
                 max_batches=args.max_batches,
             )
-            print(
-                f"agent_{agent_id} guide_{guide_id} epoch {epoch + 1}/{epochs}: "
-                f"loss={final_loss:.4f} acc={final_acc:.4f}"
-            )
+            if hasattr(epoch_bar, "set_postfix"):
+                epoch_bar.set_postfix(loss=f"{final_loss:.4f}", acc=f"{final_acc:.4f}")
+    print(f"agent_{agent_id} guide_{guide_id} final: loss={final_loss:.4f} acc={final_acc:.4f}")
 
     torch.save(
         {
