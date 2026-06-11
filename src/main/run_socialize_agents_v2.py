@@ -5,7 +5,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import torch
 from torch import nn
-from torch.utils.data import ConcatDataset, DataLoader, TensorDataset
+from torch.utils.data import TensorDataset
 
 from src.datasets.cifar import build_cifar_train_dataset, make_direct_class_splits, subset_by_classes
 from src.models.agent_model import build_agent_model
@@ -32,6 +32,13 @@ def parse_args():
     parser.add_argument("--max-epochs-b", type=int, default=None, help="Optional Phase B epoch cap.")
     parser.add_argument("--max-batches", type=int, default=None, help="Optional batch cap per epoch.")
     parser.add_argument("--num-workers", type=int, default=0)
+    parser.add_argument(
+        "--adaptation-mode",
+        type=str,
+        choices=["last_block_anchor", "full_finetune"],
+        default="last_block_anchor",
+        help="Socialization update rule. full_finetune trains all backbone and classifier parameters as a reference.",
+    )
     parser.add_argument("--no-download", action="store_true", help="Disable CIFAR download.")
     parser.add_argument("--dataset-root", type=str, default=None, help="Override cfg.dataset.root.")
     parser.add_argument("--smoke-synthetic-samples", type=int, default=None)
@@ -86,6 +93,12 @@ def set_phase_b_trainable(model: nn.Module) -> List[str]:
     else:
         print("WARNING: could not identify last block; training head only in Phase B")
 
+    return [name for name, param in model.named_parameters() if param.requires_grad]
+
+
+def set_all_trainable(model: nn.Module) -> List[str]:
+    for param in model.parameters():
+        param.requires_grad = True
     return [name for name, param in model.named_parameters() if param.requires_grad]
 
 
@@ -155,6 +168,74 @@ def collate_image_label_batch(batch):
     return images, labels
 
 
+def collect_class_tensors(dataset, class_ids: List[int]) -> Dict[int, torch.Tensor]:
+    tensors = {class_id: [] for class_id in class_ids}
+    class_set = set(class_ids)
+    for image, label in dataset:
+        label = int(label.item()) if torch.is_tensor(label) else int(label)
+        if label in class_set:
+            tensors[label].append(image.float())
+
+    missing = [class_id for class_id, images in tensors.items() if not images]
+    if missing:
+        raise RuntimeError(f"no samples available for classes: {missing}")
+    return {class_id: torch.stack(images, dim=0) for class_id, images in tensors.items()}
+
+
+def collect_packet_class_tensors(packet_dataset: Optional[TensorDataset]) -> Dict[int, torch.Tensor]:
+    if packet_dataset is None:
+        return {}
+    images, labels = packet_dataset.tensors
+    class_tensors = {}
+    for class_id in sorted(set(int(label) for label in labels.tolist())):
+        mask = labels == class_id
+        class_tensors[class_id] = images[mask].float()
+    return class_tensors
+
+
+class BalancedSocialBatchLoader:
+    def __init__(
+        self,
+        class_tensors: Dict[int, torch.Tensor],
+        samples_per_class: int,
+        steps_per_epoch: int,
+        seed: int,
+    ):
+        if not class_tensors:
+            raise ValueError("balanced social loader requires at least one class")
+        self.class_tensors = {class_id: images for class_id, images in sorted(class_tensors.items())}
+        self.samples_per_class = samples_per_class
+        self.steps_per_epoch = steps_per_epoch
+        self.seed = seed
+        self.epoch = 0
+
+    def __len__(self):
+        return self.steps_per_epoch
+
+    def __iter__(self):
+        generator = torch.Generator()
+        generator.manual_seed(self.seed + self.epoch)
+        self.epoch += 1
+        class_ids = list(self.class_tensors.keys())
+        for _ in range(self.steps_per_epoch):
+            batch_images = []
+            batch_labels = []
+            for class_id in class_ids:
+                images = self.class_tensors[class_id]
+                indices = torch.randint(
+                    low=0,
+                    high=images.size(0),
+                    size=(self.samples_per_class,),
+                    generator=generator,
+                )
+                batch_images.append(images[indices])
+                batch_labels.append(torch.full((self.samples_per_class,), class_id, dtype=torch.long))
+            images = torch.cat(batch_images, dim=0)
+            labels = torch.cat(batch_labels, dim=0)
+            order = torch.randperm(labels.size(0), generator=generator)
+            yield images[order], labels[order]
+
+
 def anchor_regularization(model: nn.Module, anchor_state: Dict[str, torch.Tensor], device: torch.device) -> torch.Tensor:
     loss = torch.zeros((), device=device)
     for name, param in model.named_parameters():
@@ -165,7 +246,7 @@ def anchor_regularization(model: nn.Module, anchor_state: Dict[str, torch.Tensor
 
 def train_epoch(
     model: nn.Module,
-    loader: DataLoader,
+    loader,
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -205,7 +286,7 @@ def train_epoch(
 def train_phase(
     phase_name: str,
     model: nn.Module,
-    loader: DataLoader,
+    loader,
     trainable_names: Iterable[str],
     lr: float,
     epochs: int,
@@ -250,15 +331,16 @@ def socialize_agent(agent_id: int, cfg: dict, train_dataset, class_splits, packe
     new_classes = get_new_classes(cfg["dataset"]["num_classes"], expert_classes)
     own_dataset = subset_by_classes(train_dataset, expert_classes)
     packet_dataset, packet_meta = load_other_packets(cfg, agent_id, packet_source, split_cfg["num_agents"])
-    datasets = [own_dataset] if packet_dataset is None else [own_dataset, packet_dataset]
-    social_dataset = ConcatDataset(datasets)
-    loader = DataLoader(
-        social_dataset,
-        batch_size=cfg["train"]["batch_size"],
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
-        collate_fn=collate_image_label_batch,
+    real_class_tensors = collect_class_tensors(own_dataset, expert_classes)
+    packet_class_tensors = collect_packet_class_tensors(packet_dataset)
+    balanced_class_tensors = {**real_class_tensors, **packet_class_tensors}
+    samples_per_class = int(social_cfg.get("samples_per_class", 8))
+    steps_per_epoch = int(social_cfg.get("steps_per_epoch", 100))
+    loader = BalancedSocialBatchLoader(
+        class_tensors=balanced_class_tensors,
+        samples_per_class=samples_per_class,
+        steps_per_epoch=steps_per_epoch,
+        seed=cfg["seed"] + agent_id * 100,
     )
 
     model, expert_ckpt, expert_ckpt_path = load_expert_model(cfg, agent_id, device)
@@ -278,35 +360,64 @@ def socialize_agent(agent_id: int, cfg: dict, train_dataset, class_splits, packe
     print(f"new_classes: {new_classes}")
     print(f"own_expert_samples: {len(own_dataset)}")
     print(f"other_packet_count: {len(packet_meta)}")
-    print(f"social_samples: {len(social_dataset)}")
+    print(f"balanced_classes: {sorted(balanced_class_tensors.keys())}")
+    print(f"samples_per_class: {samples_per_class}")
+    print(f"steps_per_epoch: {steps_per_epoch}")
+    print(f"balanced_batch_size: {len(balanced_class_tensors) * samples_per_class}")
+    print(f"adaptation_mode: {args.adaptation_mode}")
 
-    phase_a_names = set_phase_a_trainable(model)
-    phase_a_summary = train_phase(
-        "Phase A",
-        model,
-        loader,
-        phase_a_names,
-        social_cfg["lr_head"],
-        phase_a_epochs,
-        device,
-        args.max_batches,
-    )
+    if args.adaptation_mode == "last_block_anchor":
+        phase_a_names = set_phase_a_trainable(model)
+        phase_a_summary = train_phase(
+            "Phase A",
+            model,
+            loader,
+            phase_a_names,
+            social_cfg["lr_head"],
+            phase_a_epochs,
+            device,
+            args.max_batches,
+        )
 
-    phase_b_names = set_phase_b_trainable(model)
-    phase_b_summary = train_phase(
-        "Phase B",
-        model,
-        loader,
-        phase_b_names,
-        social_cfg["lr_last_block"],
-        phase_b_epochs,
-        device,
-        args.max_batches,
-        lambda_anchor=social_cfg.get("lambda_anchor", 0.0),
-        anchor_state=anchor_state,
-    )
+        phase_b_names = set_phase_b_trainable(model)
+        phase_b_summary = train_phase(
+            "Phase B",
+            model,
+            loader,
+            phase_b_names,
+            social_cfg["lr_last_block"],
+            phase_b_epochs,
+            device,
+            args.max_batches,
+            lambda_anchor=social_cfg.get("lambda_anchor", 0.0),
+            anchor_state=anchor_state,
+        )
+        train_summary = {
+            "phase_a": phase_a_summary,
+            "phase_b": phase_b_summary,
+            "lambda_anchor": social_cfg.get("lambda_anchor", 0.0),
+        }
+    elif args.adaptation_mode == "full_finetune":
+        full_epochs = phase_a_epochs + phase_b_epochs
+        full_names = set_all_trainable(model)
+        full_summary = train_phase(
+            "Full finetune",
+            model,
+            loader,
+            full_names,
+            social_cfg.get("lr_full", social_cfg.get("lr_last_block", 0.001)),
+            full_epochs,
+            device,
+            args.max_batches,
+        )
+        train_summary = {
+            "full_finetune": full_summary,
+            "lambda_anchor": 0.0,
+        }
+    else:
+        raise ValueError(f"unknown adaptation_mode: {args.adaptation_mode}")
 
-    save_dir = get_v2_socialized_checkpoint_dir(cfg, packet_source)
+    save_dir = get_v2_socialized_checkpoint_dir(cfg, packet_source, args.adaptation_mode)
     save_dir.mkdir(parents=True, exist_ok=True)
     ckpt_path = save_dir / f"agent_{agent_id}_socialized.pt"
     torch.save(
@@ -319,13 +430,19 @@ def socialize_agent(agent_id: int, cfg: dict, train_dataset, class_splits, packe
             "cfg": cfg,
             "stage": "socialized",
             "packet_source": packet_source,
+            "adaptation_mode": args.adaptation_mode,
             "source_expert_checkpoint": str(expert_ckpt_path),
             "packet_meta": packet_meta,
-            "train_summary": {
-                "phase_a": phase_a_summary,
-                "phase_b": phase_b_summary,
-                "lambda_anchor": social_cfg.get("lambda_anchor", 0.0),
+            "sampling": {
+                "mode": "balanced_class",
+                "balanced_classes": sorted(balanced_class_tensors.keys()),
+                "expert_real_classes": sorted(real_class_tensors.keys()),
+                "packet_classes": sorted(packet_class_tensors.keys()),
+                "samples_per_class": samples_per_class,
+                "steps_per_epoch": steps_per_epoch,
+                "batch_size": len(balanced_class_tensors) * samples_per_class,
             },
+            "train_summary": train_summary,
         },
         ckpt_path,
     )
@@ -361,6 +478,7 @@ def main():
     print(f"config: {args.config}")
     print(f"experiment: {cfg['experiment']['name']}")
     print(f"packet_source: {packet_source}")
+    print(f"adaptation_mode: {args.adaptation_mode}")
     print(f"device: {device}")
     print(f"dataset_root: {dataset_cfg['root']}")
     print(f"download: {not args.no_download}")

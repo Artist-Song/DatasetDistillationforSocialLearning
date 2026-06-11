@@ -43,6 +43,7 @@ python -m src.main.run_build_packets_v2 \
 python -m src.main.run_socialize_agents_v2 \
   --config "${CONFIG}" \
   --packet-source raw \
+  --adaptation-mode last_block_anchor \
   --agent-ids "${AGENT_IDS}" \
   --num-workers "${NUM_WORKERS}" \
   ${DOWNLOAD_FLAG}
@@ -50,6 +51,23 @@ python -m src.main.run_socialize_agents_v2 \
 python -m src.main.run_socialize_agents_v2 \
   --config "${CONFIG}" \
   --packet-source strict_dsdm \
+  --adaptation-mode last_block_anchor \
+  --agent-ids "${AGENT_IDS}" \
+  --num-workers "${NUM_WORKERS}" \
+  ${DOWNLOAD_FLAG}
+
+python -m src.main.run_socialize_agents_v2 \
+  --config "${CONFIG}" \
+  --packet-source raw \
+  --adaptation-mode full_finetune \
+  --agent-ids "${AGENT_IDS}" \
+  --num-workers "${NUM_WORKERS}" \
+  ${DOWNLOAD_FLAG}
+
+python -m src.main.run_socialize_agents_v2 \
+  --config "${CONFIG}" \
+  --packet-source strict_dsdm \
+  --adaptation-mode full_finetune \
   --agent-ids "${AGENT_IDS}" \
   --num-workers "${NUM_WORKERS}" \
   ${DOWNLOAD_FLAG}
@@ -65,6 +83,7 @@ python -m src.main.run_eval_v2 \
   --config "${CONFIG}" \
   --checkpoint-stage socialized \
   --packet-source raw \
+  --adaptation-mode last_block_anchor \
   --agent-ids "${AGENT_IDS}" \
   --num-workers "${NUM_WORKERS}" \
   ${DOWNLOAD_FLAG}
@@ -73,6 +92,25 @@ python -m src.main.run_eval_v2 \
   --config "${CONFIG}" \
   --checkpoint-stage socialized \
   --packet-source strict_dsdm \
+  --adaptation-mode last_block_anchor \
+  --agent-ids "${AGENT_IDS}" \
+  --num-workers "${NUM_WORKERS}" \
+  ${DOWNLOAD_FLAG}
+
+python -m src.main.run_eval_v2 \
+  --config "${CONFIG}" \
+  --checkpoint-stage socialized \
+  --packet-source raw \
+  --adaptation-mode full_finetune \
+  --agent-ids "${AGENT_IDS}" \
+  --num-workers "${NUM_WORKERS}" \
+  ${DOWNLOAD_FLAG}
+
+python -m src.main.run_eval_v2 \
+  --config "${CONFIG}" \
+  --checkpoint-stage socialized \
+  --packet-source strict_dsdm \
+  --adaptation-mode full_finetune \
   --agent-ids "${AGENT_IDS}" \
   --num-workers "${NUM_WORKERS}" \
   ${DOWNLOAD_FLAG}

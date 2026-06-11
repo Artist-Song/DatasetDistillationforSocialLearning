@@ -24,6 +24,13 @@ def parse_args():
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--checkpoint-stage", type=str, choices=["expert", "socialized"], required=True)
     parser.add_argument("--packet-source", type=str, choices=["raw", "strict_dsdm"], default=None)
+    parser.add_argument(
+        "--adaptation-mode",
+        type=str,
+        choices=["last_block_anchor", "full_finetune"],
+        default="last_block_anchor",
+        help="Which socialized checkpoint layout to evaluate.",
+    )
     parser.add_argument("--agent-ids", type=str, default="all")
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--num-workers", type=int, default=0)
@@ -63,18 +70,24 @@ def build_dataset(cfg: dict, args):
         return SyntheticCIFARDataset(fallback_samples, dataset_cfg["num_classes"], image_size)
 
 
-def checkpoint_path_for(cfg: dict, stage: str, agent_id: int, packet_source: str = None) -> Path:
+def checkpoint_path_for(
+    cfg: dict,
+    stage: str,
+    agent_id: int,
+    packet_source: str = None,
+    adaptation_mode: str = "last_block_anchor",
+) -> Path:
     if stage == "expert":
         return get_v2_agent_checkpoint_dir(cfg) / f"agent_{agent_id}_expert.pt"
     if stage == "socialized":
         if packet_source is None:
             raise ValueError("packet_source is required for socialized checkpoints")
-        return get_v2_socialized_checkpoint_dir(cfg, packet_source) / f"agent_{agent_id}_socialized.pt"
+        return get_v2_socialized_checkpoint_dir(cfg, packet_source, adaptation_mode) / f"agent_{agent_id}_socialized.pt"
     raise ValueError(f"unknown checkpoint stage: {stage}")
 
 
-def load_model(cfg: dict, stage: str, agent_id: int, packet_source: str, device: torch.device):
-    ckpt_path = checkpoint_path_for(cfg, stage, agent_id, packet_source)
+def load_model(cfg: dict, stage: str, agent_id: int, packet_source: str, adaptation_mode: str, device: torch.device):
+    ckpt_path = checkpoint_path_for(cfg, stage, agent_id, packet_source, adaptation_mode)
     if not ckpt_path.exists():
         raise FileNotFoundError(f"{stage} checkpoint missing: {ckpt_path}")
     ckpt = torch_load(ckpt_path, map_location=device)
@@ -110,10 +123,18 @@ def mean(values: List[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
-def metrics_output_path(cfg: dict, stage: str, packet_source: str = None) -> Path:
+def metrics_output_path(
+    cfg: dict,
+    stage: str,
+    packet_source: str = None,
+    adaptation_mode: str = "last_block_anchor",
+) -> Path:
     if stage == "expert":
         return get_v2_metrics_dir(cfg) / "local_only" / "metrics_v2.json"
-    return get_v2_metrics_dir(cfg) / f"{packet_source}_ipc" / "metrics_v2.json"
+    variant_name = f"{packet_source}_ipc"
+    if adaptation_mode != "last_block_anchor":
+        variant_name = f"{variant_name}_{adaptation_mode}"
+    return get_v2_metrics_dir(cfg) / variant_name / "metrics_v2.json"
 
 
 def main():
@@ -146,6 +167,7 @@ def main():
     print(f"experiment: {cfg['experiment']['name']}")
     print(f"checkpoint_stage: {args.checkpoint_stage}")
     print(f"packet_source: {packet_source}")
+    print(f"adaptation_mode: {args.adaptation_mode}")
     print(f"device: {device}")
     print(f"selected_agent_ids: {selected_agent_ids}")
 
@@ -155,7 +177,14 @@ def main():
             with StageTimer(f"eval agent_{agent_id}"):
                 expert_classes = list(class_splits[agent_id])
                 new_classes = get_new_classes(dataset_cfg["num_classes"], expert_classes)
-                model, ckpt, ckpt_path = load_model(cfg, args.checkpoint_stage, agent_id, packet_source, device)
+                model, ckpt, ckpt_path = load_model(
+                    cfg,
+                    args.checkpoint_stage,
+                    agent_id,
+                    packet_source,
+                    args.adaptation_mode,
+                    device,
+                )
                 expert_dataset = subset_by_classes(test_dataset, expert_classes)
                 new_dataset = subset_by_classes(test_dataset, new_classes)
 
@@ -167,6 +196,7 @@ def main():
                     "checkpoint_path": str(ckpt_path),
                     "checkpoint_stage": args.checkpoint_stage,
                     "packet_source": packet_source if args.checkpoint_stage == "socialized" else None,
+                    "adaptation_mode": args.adaptation_mode if args.checkpoint_stage == "socialized" else None,
                     "expert_classes": expert_classes,
                     "new_classes": new_classes,
                     "expert_accuracy": expert_acc,
@@ -188,11 +218,12 @@ def main():
         "experiment": cfg["experiment"]["name"],
         "checkpoint_stage": args.checkpoint_stage,
         "packet_source": packet_source if args.checkpoint_stage == "socialized" else None,
+        "adaptation_mode": args.adaptation_mode if args.checkpoint_stage == "socialized" else None,
         "agent_ids": selected_agent_ids,
         "agents": agents,
         "summary": summary,
     }
-    out_path = metrics_output_path(cfg, args.checkpoint_stage, packet_source)
+    out_path = metrics_output_path(cfg, args.checkpoint_stage, packet_source, args.adaptation_mode)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     print(f"saved metrics: {out_path}")

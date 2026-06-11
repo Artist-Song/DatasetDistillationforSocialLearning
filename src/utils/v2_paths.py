@@ -23,8 +23,11 @@ def get_v2_packet_visual_dir(cfg: dict, packet_source: str) -> Path:
     return get_v2_experiment_root(cfg) / "packet_visuals" / packet_source
 
 
-def get_v2_socialized_checkpoint_dir(cfg: dict, packet_source: str) -> Path:
-    return get_v2_experiment_root(cfg) / "checkpoints" / "socialized" / packet_source
+def get_v2_socialized_checkpoint_dir(cfg: dict, packet_source: str, adaptation_mode: str = "last_block_anchor") -> Path:
+    base_dir = get_v2_experiment_root(cfg) / "checkpoints" / "socialized" / packet_source
+    if adaptation_mode == "last_block_anchor":
+        return base_dir
+    return base_dir / adaptation_mode
 
 
 def get_v2_metrics_dir(cfg: dict) -> Path:

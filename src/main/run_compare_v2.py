@@ -18,6 +18,8 @@ VARIANTS = {
     "local_only": {"stage": "expert", "packet_source": None},
     "raw_ipc": {"stage": "socialized", "packet_source": "raw"},
     "strict_dsdm_ipc": {"stage": "socialized", "packet_source": "strict_dsdm"},
+    "raw_ipc_full_finetune": {"stage": "socialized", "packet_source": "raw"},
+    "strict_dsdm_ipc_full_finetune": {"stage": "socialized", "packet_source": "strict_dsdm"},
 }
 
 
