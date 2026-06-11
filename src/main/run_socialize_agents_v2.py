@@ -148,6 +148,13 @@ def load_other_packets(cfg: dict, receiver_id: int, packet_source: str, num_agen
     return TensorDataset(images, labels), packet_meta
 
 
+def collate_image_label_batch(batch):
+    images, labels = zip(*batch)
+    images = torch.stack([image.float() for image in images], dim=0)
+    labels = torch.tensor([int(label.item()) if torch.is_tensor(label) else int(label) for label in labels], dtype=torch.long)
+    return images, labels
+
+
 def anchor_regularization(model: nn.Module, anchor_state: Dict[str, torch.Tensor], device: torch.device) -> torch.Tensor:
     loss = torch.zeros((), device=device)
     for name, param in model.named_parameters():
@@ -251,6 +258,7 @@ def socialize_agent(agent_id: int, cfg: dict, train_dataset, class_splits, packe
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=device.type == "cuda",
+        collate_fn=collate_image_label_batch,
     )
 
     model, expert_ckpt, expert_ckpt_path = load_expert_model(cfg, agent_id, device)
