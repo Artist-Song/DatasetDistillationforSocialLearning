@@ -36,3 +36,11 @@ def get_v2_metrics_dir(cfg: dict) -> Path:
 
 def get_v2_comparison_dir(cfg: dict) -> Path:
     return get_v2_experiment_root(cfg) / "comparison"
+
+
+def get_v2_packet_probe_metrics_dir(cfg: dict) -> Path:
+    return get_v2_metrics_dir(cfg) / "packet_probe"
+
+
+def get_v2_packet_probe_checkpoint_dir(cfg: dict) -> Path:
+    return get_v2_experiment_root(cfg) / "checkpoints" / "packet_probe"
