@@ -14,6 +14,7 @@ from test import test_data, load_ckpt
 from misc.augment import DiffAug
 from misc import utils
 from math import ceil
+from pathlib import Path
 import random
 
 
@@ -503,25 +504,15 @@ def condense(args, logger, device='cuda'):
     smooth_syns = [None] * nclass 
     h_p = [None] * nclass
     progress = _make_stage1_progress(args.niter, "DSDM condense")
+    pretrained_paths = [
+        Path(args.save_pretrain_dir) / f"{args.dataset}_model_{i}.pth"
+        for i in range(args.pretrained_model_number)
+    ]
 
     for it in range(args.niter):
         j = random.randint(0, args.pretrained_model_number-1)
         model = define_model(args, nclass).to(device)
-        if args.dataset == 'cifar10':
-            model.load_state_dict(torch.load(
-                f'./{args.save_pretrain_dir}/{args.dataset}_model_{j}.pth', map_location=device))
-        elif args.dataset == 'cifar100':
-            model.load_state_dict(torch.load(
-                f'./{args.save_pretrain_dir}/{args.dataset}_model_{j}.pth', map_location=device))
-        elif args.dataset == 'svhn':
-            model.load_state_dict(torch.load(
-                f'./{args.save_pretrain_dir}/{args.dataset}_model_{j}.pth', map_location=device))
-        elif args.dataset == 'mnist':
-            model.load_state_dict(torch.load(
-                f'./{args.save_pretrain_dir}/{args.dataset}_model_{j}.pth', map_location=device))
-        elif args.dataset == 'fashion':
-            model.load_state_dict(torch.load(
-                f'./{args.save_pretrain_dir}/{args.dataset}_model_{j}.pth', map_location=device))
+        model.load_state_dict(torch.load(pretrained_paths[j], map_location=device))
 
         loss_total = 0
         synset.data.data = torch.clamp(synset.data.data, min=0., max=1.)

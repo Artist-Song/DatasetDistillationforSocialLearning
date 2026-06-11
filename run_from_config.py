@@ -77,6 +77,38 @@ def build_and_save_selection_packets(args):
     save_packet_visual(args, "importance", importance[0])
 
 
+def validate_pretrained_models(args):
+    """在蒸馏前检查 DSDM guide 模型池是否完整。"""
+    candidates = [
+        Path(args.save_pretrain_dir),
+        ROOT / args.save_pretrain_dir,
+        ROOT / "DSDM" / "pre_trained_model",
+    ]
+    model_dir = None
+    missing = []
+    for candidate in candidates:
+        current_missing = []
+        for index in range(int(args.pretrained_model_number)):
+            path = candidate / f"{args.dataset}_model_{index}.pth"
+            if not path.exists():
+                current_missing.append(str(path))
+        if not current_missing:
+            model_dir = candidate
+            missing = []
+            break
+        if model_dir is None:
+            missing = current_missing
+    if missing:
+        message = "\n".join(missing)
+        raise FileNotFoundError(
+            "DSDM 预训练 guide 模型不完整，缺少以下文件：\n"
+            f"{message}\n"
+            "请先补齐模型，或把 configs/main.yaml 中的 pretrained_model_number 调整为实际数量。"
+        )
+    args.save_pretrain_dir = str(model_dir)
+    print(f"Use pre-trained guide model dir: {args.save_pretrain_dir}")
+
+
 def main():
     """读取主配置，准备输出目录，并按需启动 DSDM。"""
     cli = parse_cli()
@@ -94,6 +126,7 @@ def main():
 
     from DSDM import run_dsdm
 
+    validate_pretrained_models(args)
     run_dsdm(args)
     build_and_save_selection_packets(args)
 

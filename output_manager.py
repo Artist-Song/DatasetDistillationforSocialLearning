@@ -145,7 +145,7 @@ def save_packet(args, images, labels, class_ids, source, method, meta=None):
 
 def _save_grid(path, images, args, unnormalize=False):
     """保存一组图片网格，可用于 packet 可视化。"""
-    from DSDM.data import save_img
+    from data import save_img
 
     save_img(str(path), images, unnormalize=unnormalize, dataname=args.dataset)
     return path
