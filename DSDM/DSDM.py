@@ -30,6 +30,16 @@ def _try_stage1_output(func_name, *params, **kwargs):
         return None
 
 
+def _make_stage1_progress(total, name):
+    """创建 Stage 1 进度条，失败时静默降级。"""
+    try:
+        from progress_timer import ProgressTimer
+        return ProgressTimer(total, name=name)
+    except Exception as exc:
+        print(f"[Stage1 progress skipped] {exc}")
+        return None
+
+
 class Synthesizer():
     """Condensed data class
     """
@@ -492,6 +502,7 @@ def condense(args, logger, device='cuda'):
 
     smooth_syns = [None] * nclass 
     h_p = [None] * nclass
+    progress = _make_stage1_progress(args.niter, "DSDM condense")
 
     for it in range(args.niter):
         j = random.randint(0, args.pretrained_model_number-1)
@@ -583,6 +594,11 @@ def condense(args, logger, device='cuda'):
                              dataname=args.dataset)
                 logger(
                     "->->->->->->->->->->->->-> Best Result: {:.1f}".format(best_acc))
+        if progress is not None:
+            progress.update(it + 1, extra=f"loss={loss_total/nclass:.2f} best={best_acc:.1f}")
+
+    if progress is not None:
+        progress.close(extra=f"best={best_acc:.1f}")
 
 
 def run_dsdm(args):
