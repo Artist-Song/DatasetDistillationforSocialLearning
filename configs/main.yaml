@@ -1,0 +1,70 @@
+project:
+  name: social_packet_learning
+  stage: dsdm_reproduce
+  output_root: ./outputs
+  run_name: cifar10_dsdm_ipc10
+
+dataset:
+  name: cifar10
+  data_dir: ./data
+  num_classes: 10
+  image_size: 32
+
+model_pool:
+  default: convnet
+  models:
+    convnet:
+      depth: 3
+      width: 1.0
+      norm_type: instance
+
+distillation:
+  method: dsdm
+  ipc: 10
+  factor: 2
+  init: mix
+  decode_type: single
+  aug_type: color_crop_cutout
+  match: semantic
+  metric: mse
+  f_idx: "2"
+  niter: 10000
+  lr_img: 0.1
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  smooth_iter: 2000
+  cov_weight: 50.0
+  h_p_weight: 0.2
+  smooth_factor: 0.99
+
+selection:
+  enabled: true
+  methods:
+    - heuristic
+    - importance
+  heuristic:
+    strategy: random_per_class
+  importance:
+    scorer: guide_ensemble
+    score_type: low_confidence
+
+packet:
+  enabled: true
+  format: hard_label_images
+
+communication:
+  enabled: false
+  protocol: none
+
+evaluation:
+  enabled: true
+  epochs: 1500
+  batch_size: 64
+  repeat: 1
+
+runtime:
+  seed: 0
+  workers: 8
+  device: cuda
+  gpu_id: 0
