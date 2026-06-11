@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import torch
+from torchvision.utils import save_image
 
 from src.datasets.cifar import build_cifar_train_dataset, make_direct_class_splits
 from src.distill.v2_strict_dsdm import build_raw_images, distill_images_with_strict_dsdm, freeze_guide_pool
@@ -14,7 +15,8 @@ from src.training.v2_train_utils import SyntheticCIFARDataset
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
 from src.utils.seed import set_seed
-from src.utils.v2_paths import get_v2_dsdm_guide_dir, get_v2_packet_dir
+from src.utils.v2_paths import get_v2_dsdm_guide_dir, get_v2_packet_dir, get_v2_packet_visual_dir
+from src.utils.v2_progress import StageTimer, progress
 from src.utils.v2_runtime import resolve_device
 
 
@@ -42,7 +44,15 @@ def parse_args():
         help="Use a tiny synthetic CIFAR-shaped dataset for local smoke tests only.",
     )
     parser.add_argument("--skip-existing", action="store_true", help="Skip packet files that already exist.")
+    parser.add_argument("--no-visuals", action="store_true", help="Do not save packet PNG visualizations.")
     return parser.parse_args()
+
+
+def torch_load(path, map_location):
+    try:
+        return torch.load(path, map_location=map_location, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=map_location)
 
 
 def load_guide_models(cfg: dict, agent_id: int, device: torch.device, max_guides: int = None):
@@ -60,7 +70,7 @@ def load_guide_models(cfg: dict, agent_id: int, device: torch.device, max_guides
             missing_paths.append(ckpt_path)
             continue
         model = build_agent_model(cfg, agent_id, device)
-        ckpt = torch.load(ckpt_path, map_location=device)
+        ckpt = torch_load(ckpt_path, map_location=device)
         model.load_state_dict(ckpt["model_state_dict"])
         guide_models.append(model)
         guide_paths.append(str(ckpt_path))
@@ -114,6 +124,28 @@ def save_packet(packet_path: Path, sender_id: int, class_ids: List[int], images:
     return packet
 
 
+def save_packet_visuals(cfg: dict, packet_source: str, packet: SocialPacket):
+    visual_dir = get_v2_packet_visual_dir(cfg, packet_source)
+    visual_dir.mkdir(parents=True, exist_ok=True)
+    images = packet.images.detach().float().clamp(0.0, 1.0)
+    grid_path = visual_dir / f"agent_{packet.sender_id}_packet_grid.png"
+    save_image(images, grid_path, nrow=max(1, int(packet.meta.get("ipc", 10))))
+
+    class_paths = []
+    labels = packet.hard_labels.detach().cpu()
+    for class_id in packet.class_ids:
+        mask = labels == int(class_id)
+        if mask.any():
+            class_path = visual_dir / f"agent_{packet.sender_id}_class_{int(class_id)}.png"
+            save_image(images[mask], class_path, nrow=max(1, int(packet.meta.get("ipc", 10))))
+            class_paths.append(str(class_path))
+
+    packet.meta["visual_grid_path"] = str(grid_path)
+    packet.meta["visual_class_paths"] = class_paths
+    print(f"saved visuals: {grid_path}")
+    return grid_path
+
+
 def build_raw_packet(sender_id: int, class_ids: List[int], train_dataset, cfg: dict):
     ipc = cfg["packet"]["ipc"]
     images, hard_labels = build_raw_images(train_dataset, class_ids, ipc)
@@ -130,6 +162,7 @@ def build_strict_dsdm_packet(sender_id: int, class_ids: List[int], train_dataset
     guide_models, guide_paths = load_guide_models(cfg, sender_id, device, max_guides=args.max_guides)
     packet_cfg = dict(cfg.get("packet", {}))
     packet_cfg.update(cfg.get("dsdm", {}))
+    packet_cfg["progress_desc"] = f"strict dsdm agent_{sender_id}"
     if args.max_steps is not None:
         packet_cfg["distill_steps"] = min(packet_cfg.get("distill_steps", args.max_steps), args.max_steps)
 
@@ -160,6 +193,12 @@ def build_sender_packet(sender_id: int, class_ids: List[int], train_dataset, cfg
     packet_dir = get_v2_packet_dir(cfg, packet_source)
     packet_path = packet_dir / f"agent_{sender_id}_packet.pt"
     if args.skip_existing and packet_path.exists():
+        if not args.no_visuals:
+            packet = torch_load(packet_path, map_location="cpu")
+            visual_path = get_v2_packet_visual_dir(cfg, packet_source) / f"agent_{sender_id}_packet_grid.png"
+            if not visual_path.exists():
+                save_packet_visuals(cfg, packet_source, packet)
+                torch.save(packet, packet_path)
         print(f"skip existing: {packet_path}")
         return None
 
@@ -174,7 +213,11 @@ def build_sender_packet(sender_id: int, class_ids: List[int], train_dataset, cfg
     else:
         raise ValueError(f"unknown packet_source: {packet_source}")
 
-    return save_packet(packet_path, sender_id, class_ids, images, hard_labels, meta)
+    packet = save_packet(packet_path, sender_id, class_ids, images, hard_labels, meta)
+    if not args.no_visuals:
+        save_packet_visuals(cfg, packet_source, packet)
+        torch.save(packet, packet_path)
+    return packet
 
 
 def build_dataset(cfg: dict, args):
@@ -232,8 +275,10 @@ def main():
     if args.smoke_synthetic_samples is not None:
         print(f"smoke_synthetic_samples: {args.smoke_synthetic_samples}")
 
-    for sender_id in selected_agent_ids:
-        build_sender_packet(sender_id, class_splits[sender_id], train_dataset, cfg, packet_source, device, args)
+    with StageTimer(f"run_build_packets_v2 {packet_source} total"):
+        for sender_id in progress(selected_agent_ids, desc=f"{packet_source} packet agents"):
+            with StageTimer(f"build {packet_source} packet agent_{sender_id}"):
+                build_sender_packet(sender_id, class_splits[sender_id], train_dataset, cfg, packet_source, device, args)
 
 
 if __name__ == "__main__":

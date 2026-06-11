@@ -12,6 +12,7 @@ from src.training.v2_train_utils import SyntheticCIFARDataset, get_new_classes, 
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
 from src.utils.seed import set_seed
+from src.utils.v2_progress import StageTimer, progress
 from src.utils.v2_paths import get_v2_dsdm_guide_dir
 from src.utils.v2_runtime import resolve_device
 
@@ -37,7 +38,8 @@ def parse_args():
         default=None,
         help="Use a tiny synthetic CIFAR-shaped dataset for local smoke tests only.",
     )
-    parser.add_argument("--skip-existing", action="store_true", help="Skip guide checkpoints that already exist.")
+    parser.add_argument("--skip-existing", action="store_true", help="Deprecated; guide checkpoints are reused by default.")
+    parser.add_argument("--overwrite-existing", action="store_true", help="Retrain and overwrite existing guide checkpoints.")
     return parser.parse_args()
 
 
@@ -63,8 +65,8 @@ def train_guide(agent_id: int, guide_id: int, cfg: dict, agent_dataset, expert_c
     guide_dir = get_v2_dsdm_guide_dir(cfg, agent_id)
     guide_dir.mkdir(parents=True, exist_ok=True)
     ckpt_path = guide_dir / f"guide_{guide_id}.pt"
-    if args.skip_existing and ckpt_path.exists():
-        print(f"skip existing: {ckpt_path}")
+    if ckpt_path.exists() and not args.overwrite_existing:
+        print(f"reuse existing DSDM guide checkpoint: {ckpt_path}")
         return ckpt_path
 
     model = build_agent_model(cfg, agent_id, device)
@@ -100,19 +102,20 @@ def train_guide(agent_id: int, guide_id: int, cfg: dict, agent_dataset, expert_c
 
     final_loss = None
     final_acc = None
-    for epoch in range(epochs):
-        final_loss, final_acc = train_one_epoch(
-            model=model,
-            loader=loader,
-            criterion=criterion,
-            optimizer=optimizer,
-            device=device,
-            max_batches=args.max_batches,
-        )
-        print(
-            f"agent_{agent_id} guide_{guide_id} epoch {epoch + 1}/{epochs}: "
-            f"loss={final_loss:.4f} acc={final_acc:.4f}"
-        )
+    with StageTimer(f"pretrain DSDM guide agent_{agent_id} guide_{guide_id}"):
+        for epoch in progress(range(epochs), desc=f"agent_{agent_id} guide_{guide_id} epochs"):
+            final_loss, final_acc = train_one_epoch(
+                model=model,
+                loader=loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
+                max_batches=args.max_batches,
+            )
+            print(
+                f"agent_{agent_id} guide_{guide_id} epoch {epoch + 1}/{epochs}: "
+                f"loss={final_loss:.4f} acc={final_acc:.4f}"
+            )
 
     torch.save(
         {
@@ -154,8 +157,9 @@ def pretrain_agent_guides(agent_id: int, cfg: dict, train_dataset, class_splits,
     print(f"new_classes: {get_new_classes(dataset_cfg['num_classes'], expert_classes)}")
     print(f"guide_count: {guide_count}")
 
-    for guide_id in range(guide_count):
-        train_guide(agent_id, guide_id, cfg, agent_dataset, expert_classes, device, args)
+    with StageTimer(f"pretrain DSDM guide pool agent_{agent_id}"):
+        for guide_id in progress(range(guide_count), desc=f"agent_{agent_id} guides"):
+            train_guide(agent_id, guide_id, cfg, agent_dataset, expert_classes, device, args)
 
 
 def main():
@@ -206,8 +210,9 @@ def main():
     if args.smoke_synthetic_samples is not None:
         print(f"smoke_synthetic_samples: {args.smoke_synthetic_samples}")
 
-    for agent_id in selected_agent_ids:
-        pretrain_agent_guides(agent_id, cfg, train_dataset, class_splits, device, args)
+    with StageTimer("run_pretrain_dsdm_guides total"):
+        for agent_id in progress(selected_agent_ids, desc="DSDM guide agents"):
+            pretrain_agent_guides(agent_id, cfg, train_dataset, class_splits, device, args)
 
 
 if __name__ == "__main__":

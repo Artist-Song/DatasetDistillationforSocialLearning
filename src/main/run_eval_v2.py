@@ -14,6 +14,7 @@ from src.training.v2_train_utils import SyntheticCIFARDataset, get_new_classes
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
 from src.utils.seed import set_seed
+from src.utils.v2_progress import StageTimer, progress
 from src.utils.v2_paths import get_v2_agent_checkpoint_dir, get_v2_metrics_dir, get_v2_socialized_checkpoint_dir
 from src.utils.v2_runtime import resolve_device
 
@@ -149,32 +150,34 @@ def main():
     print(f"selected_agent_ids: {selected_agent_ids}")
 
     agents: Dict[str, dict] = {}
-    for agent_id in selected_agent_ids:
-        expert_classes = list(class_splits[agent_id])
-        new_classes = get_new_classes(dataset_cfg["num_classes"], expert_classes)
-        model, ckpt, ckpt_path = load_model(cfg, args.checkpoint_stage, agent_id, packet_source, device)
-        expert_dataset = subset_by_classes(test_dataset, expert_classes)
-        new_dataset = subset_by_classes(test_dataset, new_classes)
+    with StageTimer("run_eval_v2 total"):
+        for agent_id in progress(selected_agent_ids, desc=f"eval {args.checkpoint_stage} agents"):
+            with StageTimer(f"eval agent_{agent_id}"):
+                expert_classes = list(class_splits[agent_id])
+                new_classes = get_new_classes(dataset_cfg["num_classes"], expert_classes)
+                model, ckpt, ckpt_path = load_model(cfg, args.checkpoint_stage, agent_id, packet_source, device)
+                expert_dataset = subset_by_classes(test_dataset, expert_classes)
+                new_dataset = subset_by_classes(test_dataset, new_classes)
 
-        expert_acc = evaluate_accuracy(model, expert_dataset, batch_size, device, args.num_workers)
-        new_acc = evaluate_accuracy(model, new_dataset, batch_size, device, args.num_workers)
-        overall_acc = evaluate_accuracy(model, test_dataset, batch_size, device, args.num_workers)
-        agents[str(agent_id)] = {
-            "agent_id": agent_id,
-            "checkpoint_path": str(ckpt_path),
-            "checkpoint_stage": args.checkpoint_stage,
-            "packet_source": packet_source if args.checkpoint_stage == "socialized" else None,
-            "expert_classes": expert_classes,
-            "new_classes": new_classes,
-            "expert_accuracy": expert_acc,
-            "new_accuracy": new_acc,
-            "overall_accuracy": overall_acc,
-            "stage_in_checkpoint": ckpt.get("stage"),
-        }
-        print(
-            f"agent_{agent_id}: expert={expert_acc:.4f} "
-            f"new={new_acc:.4f} overall={overall_acc:.4f}"
-        )
+                expert_acc = evaluate_accuracy(model, expert_dataset, batch_size, device, args.num_workers)
+                new_acc = evaluate_accuracy(model, new_dataset, batch_size, device, args.num_workers)
+                overall_acc = evaluate_accuracy(model, test_dataset, batch_size, device, args.num_workers)
+                agents[str(agent_id)] = {
+                    "agent_id": agent_id,
+                    "checkpoint_path": str(ckpt_path),
+                    "checkpoint_stage": args.checkpoint_stage,
+                    "packet_source": packet_source if args.checkpoint_stage == "socialized" else None,
+                    "expert_classes": expert_classes,
+                    "new_classes": new_classes,
+                    "expert_accuracy": expert_acc,
+                    "new_accuracy": new_acc,
+                    "overall_accuracy": overall_acc,
+                    "stage_in_checkpoint": ckpt.get("stage"),
+                }
+                print(
+                    f"agent_{agent_id}: expert={expert_acc:.4f} "
+                    f"new={new_acc:.4f} overall={overall_acc:.4f}"
+                )
 
     summary = {
         "average_expert_accuracy": mean([item["expert_accuracy"] for item in agents.values()]),

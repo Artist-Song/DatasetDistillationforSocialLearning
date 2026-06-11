@@ -570,7 +570,8 @@ def distill_images_with_strict_dsdm(
     loss_dict_avg = {"Proto": 0.0, "Sem": 0.0, "Mem": 0.0}
     last_loss = 0.0
 
-    progress = tqdm(range(steps), desc="strict dsdm distill", leave=False)
+    progress_desc = packet_cfg.get("progress_desc", "strict dsdm distill")
+    progress = tqdm(range(steps), desc=progress_desc, leave=False)
     for it in progress:
         loss_total = 0.0
         loss_dict_avg = {"Proto": 0.0, "Sem": 0.0, "Mem": 0.0}

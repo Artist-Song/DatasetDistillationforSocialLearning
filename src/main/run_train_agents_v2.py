@@ -11,6 +11,7 @@ from src.models.agent_model import build_agent_model
 from src.training.v2_train_utils import SyntheticCIFARDataset, get_new_classes, train_one_epoch
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
+from src.utils.v2_progress import StageTimer, progress
 from src.utils.seed import set_seed
 from src.utils.v2_paths import get_v2_agent_checkpoint_dir
 from src.utils.v2_runtime import resolve_device
@@ -80,16 +81,17 @@ def train_agent(agent_id: int, cfg: dict, train_dataset, class_splits, device: t
 
     final_loss = None
     final_acc = None
-    for epoch in range(epochs):
-        final_loss, final_acc = train_one_epoch(
-            model=model,
-            loader=loader,
-            criterion=criterion,
-            optimizer=optimizer,
-            device=device,
-            max_batches=args.max_batches,
-        )
-        print(f"agent_{agent_id} epoch {epoch + 1}/{epochs}: loss={final_loss:.4f} acc={final_acc:.4f}")
+    with StageTimer(f"train expert agent_{agent_id}"):
+        for epoch in progress(range(epochs), desc=f"agent_{agent_id} expert epochs"):
+            final_loss, final_acc = train_one_epoch(
+                model=model,
+                loader=loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
+                max_batches=args.max_batches,
+            )
+            print(f"agent_{agent_id} epoch {epoch + 1}/{epochs}: loss={final_loss:.4f} acc={final_acc:.4f}")
 
     ckpt_dir = get_v2_agent_checkpoint_dir(cfg)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -160,8 +162,9 @@ def main():
     if args.smoke_synthetic_samples is not None:
         print(f"smoke_synthetic_samples: {args.smoke_synthetic_samples}")
 
-    for agent_id in selected_agent_ids:
-        train_agent(agent_id, cfg, train_dataset, class_splits, device, args)
+    with StageTimer("run_train_agents_v2 total"):
+        for agent_id in progress(selected_agent_ids, desc="expert agents"):
+            train_agent(agent_id, cfg, train_dataset, class_splits, device, args)
 
 
 if __name__ == "__main__":

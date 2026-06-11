@@ -10,6 +10,7 @@ import torch
 
 from src.packet.packet_dataclass import SocialPacket
 from src.utils.config import load_yaml
+from src.utils.v2_progress import StageTimer, progress
 from src.utils.v2_paths import get_v2_comparison_dir, get_v2_metrics_dir, get_v2_packet_dir
 
 
@@ -126,25 +127,26 @@ def main():
         "variants": {},
     }
     rows = []
-    for variant, variant_cfg in VARIANTS.items():
-        metric_stats = read_metrics(cfg, variant)
-        comm_stats = packet_communication_stats(cfg, variant_cfg["packet_source"])
-        row = {
-            "variant": variant,
-            **metric_stats,
-            **comm_stats,
-        }
-        comparison["variants"][variant] = row
-        rows.append(row)
-        if metric_stats["available"]:
-            print(
-                f"{variant}: expert={metric_stats['average_expert_accuracy']:.4f} "
-                f"new={metric_stats['average_new_accuracy']:.4f} "
-                f"overall={metric_stats['average_overall_accuracy']:.4f} "
-                f"bytes={comm_stats['bytes_total']}"
-            )
-        else:
-            print(f"{variant}: metrics missing at {metric_stats['metrics_path']} bytes={comm_stats['bytes_total']}")
+    with StageTimer("run_compare_v2 total"):
+        for variant, variant_cfg in progress(VARIANTS.items(), desc="compare variants"):
+            metric_stats = read_metrics(cfg, variant)
+            comm_stats = packet_communication_stats(cfg, variant_cfg["packet_source"])
+            row = {
+                "variant": variant,
+                **metric_stats,
+                **comm_stats,
+            }
+            comparison["variants"][variant] = row
+            rows.append(row)
+            if metric_stats["available"]:
+                print(
+                    f"{variant}: expert={metric_stats['average_expert_accuracy']:.4f} "
+                    f"new={metric_stats['average_new_accuracy']:.4f} "
+                    f"overall={metric_stats['average_overall_accuracy']:.4f} "
+                    f"bytes={comm_stats['bytes_total']}"
+                )
+            else:
+                print(f"{variant}: metrics missing at {metric_stats['metrics_path']} bytes={comm_stats['bytes_total']}")
 
     out_dir = get_v2_comparison_dir(cfg)
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -14,6 +14,7 @@ from src.training.v2_train_utils import SyntheticCIFARDataset, get_new_classes
 from src.utils.agent_selection import parse_agent_ids
 from src.utils.config import load_yaml
 from src.utils.seed import set_seed
+from src.utils.v2_progress import StageTimer, progress
 from src.utils.v2_paths import (
     get_v2_agent_checkpoint_dir,
     get_v2_packet_dir,
@@ -215,18 +216,19 @@ def train_phase(
 
     final_loss = None
     final_acc = None
-    for epoch in range(epochs):
-        final_loss, final_acc = train_epoch(
-            model=model,
-            loader=loader,
-            criterion=criterion,
-            optimizer=optimizer,
-            device=device,
-            max_batches=max_batches,
-            lambda_anchor=lambda_anchor,
-            anchor_state=anchor_state,
-        )
-        print(f"{phase_name} epoch {epoch + 1}/{epochs}: loss={final_loss:.4f} acc={final_acc:.4f}")
+    with StageTimer(phase_name):
+        for epoch in progress(range(epochs), desc=f"{phase_name} epochs"):
+            final_loss, final_acc = train_epoch(
+                model=model,
+                loader=loader,
+                criterion=criterion,
+                optimizer=optimizer,
+                device=device,
+                max_batches=max_batches,
+                lambda_anchor=lambda_anchor,
+                anchor_state=anchor_state,
+            )
+            print(f"{phase_name} epoch {epoch + 1}/{epochs}: loss={final_loss:.4f} acc={final_acc:.4f}")
     return {"epochs": epochs, "final_loss": float(final_loss), "final_acc": float(final_acc)}
 
 
@@ -352,8 +354,10 @@ def main():
     print(f"download: {not args.no_download}")
     print(f"selected_agent_ids: {selected_agent_ids}")
 
-    for agent_id in selected_agent_ids:
-        socialize_agent(agent_id, cfg, train_dataset, class_splits, packet_source, device, args)
+    with StageTimer("run_socialize_agents_v2 total"):
+        for agent_id in progress(selected_agent_ids, desc="socialize agents"):
+            with StageTimer(f"socialize agent_{agent_id}"):
+                socialize_agent(agent_id, cfg, train_dataset, class_splits, packet_source, device, args)
 
 
 if __name__ == "__main__":
