@@ -89,6 +89,45 @@ def load_guide_models(cfg: dict, agent_id: int, device: torch.device, max_guides
     return guide_models, guide_paths
 
 
+def get_agent_model_name(cfg: dict, agent_id: int) -> str:
+    agent_models = cfg.get("agent_models", {})
+    if agent_id in agent_models:
+        return agent_models[agent_id]
+    if str(agent_id) in agent_models:
+        return agent_models[str(agent_id)]
+    model_cfg = cfg.get("model", {})
+    if "name" in model_cfg:
+        return model_cfg["name"]
+    raise KeyError(f"model type for agent_id={agent_id} not found")
+
+
+def default_dsdm_feature_index(model_name: str) -> Tuple[int, int]:
+    if model_name == "conv":
+        return 2, -1
+    if model_name in {"resnet", "resnet_ap"}:
+        return 4, -1
+    raise ValueError(f"unknown model_name for DSDM feature index: {model_name}")
+
+
+def apply_dsdm_feature_params(cfg: dict, sender_id: int, packet_cfg: dict) -> dict:
+    dsdm_cfg = cfg.get("dsdm", {})
+    packet_section = cfg.get("packet", {})
+    model_name = get_agent_model_name(cfg, sender_id)
+    default_idx_from, default_idx_to = default_dsdm_feature_index(model_name)
+
+    if "idx_from" not in dsdm_cfg and "idx_from" not in packet_section:
+        packet_cfg["idx_from"] = default_idx_from
+    if "idx_to" not in dsdm_cfg and "idx_to" not in packet_section:
+        packet_cfg["idx_to"] = default_idx_to
+
+    packet_cfg["metric"] = "mse"
+    packet_cfg["dsdm_feature_model_name"] = model_name
+    packet_cfg["dsdm_feature_index_source"] = (
+        "config_override" if "idx_from" in dsdm_cfg or "idx_to" in dsdm_cfg else "model_default"
+    )
+    return packet_cfg
+
+
 def make_packet_meta(packet: SocialPacket, packet_source: str, sender_id: int, class_ids: List[int], ipc: int, extra: dict = None):
     meta = {
         "packet_source": packet_source,
@@ -146,7 +185,13 @@ def save_packet_visuals(cfg: dict, packet_source: str, packet: SocialPacket):
     return grid_path
 
 
-def packet_matches_request(packet: SocialPacket, packet_source: str, class_ids: List[int], ipc: int) -> Tuple[bool, str]:
+def packet_matches_request(
+    packet: SocialPacket,
+    packet_source: str,
+    class_ids: List[int],
+    ipc: int,
+    expected_meta: dict = None,
+) -> Tuple[bool, str]:
     meta = packet.meta or {}
     if meta.get("packet_source") != packet_source:
         return False, f"packet_source {meta.get('packet_source')} != {packet_source}"
@@ -157,6 +202,9 @@ def packet_matches_request(packet: SocialPacket, packet_source: str, class_ids: 
     expected_images = len(class_ids) * ipc
     if int(packet.images.shape[0]) != expected_images:
         return False, f"image_count {int(packet.images.shape[0])} != {expected_images}"
+    for key, expected_value in (expected_meta or {}).items():
+        if meta.get(key) != expected_value:
+            return False, f"{key} {meta.get(key)} != {expected_value}"
     return True, "matched"
 
 
@@ -176,6 +224,7 @@ def build_strict_dsdm_packet(sender_id: int, class_ids: List[int], train_dataset
     guide_models, guide_paths = load_guide_models(cfg, sender_id, device, max_guides=args.max_guides)
     packet_cfg = dict(cfg.get("packet", {}))
     packet_cfg.update(cfg.get("dsdm", {}))
+    packet_cfg = apply_dsdm_feature_params(cfg, sender_id, packet_cfg)
     packet_cfg["progress_desc"] = f"strict dsdm agent_{sender_id}"
     if args.max_steps is not None:
         packet_cfg["distill_steps"] = min(packet_cfg.get("distill_steps", args.max_steps), args.max_steps)
@@ -206,9 +255,25 @@ def build_sender_packet(sender_id: int, class_ids: List[int], train_dataset, cfg
 
     packet_dir = get_v2_packet_dir(cfg, packet_source)
     packet_path = packet_dir / f"agent_{sender_id}_packet.pt"
+    expected_meta = None
+    if packet_source == "strict_dsdm":
+        expected_packet_cfg = dict(cfg.get("packet", {}))
+        expected_packet_cfg.update(cfg.get("dsdm", {}))
+        expected_packet_cfg = apply_dsdm_feature_params(cfg, sender_id, expected_packet_cfg)
+        expected_meta = {
+            "idx_from": expected_packet_cfg["idx_from"],
+            "idx_to": expected_packet_cfg["idx_to"],
+            "metric": expected_packet_cfg["metric"],
+        }
     if args.skip_existing and packet_path.exists():
         packet = torch_load(packet_path, map_location="cpu")
-        matches_request, reason = packet_matches_request(packet, packet_source, class_ids, cfg["packet"]["ipc"])
+        matches_request, reason = packet_matches_request(
+            packet,
+            packet_source,
+            class_ids,
+            cfg["packet"]["ipc"],
+            expected_meta=expected_meta,
+        )
         if matches_request:
             if not args.no_visuals:
                 visual_path = get_v2_packet_visual_dir(cfg, packet_source) / f"agent_{sender_id}_packet_grid.png"

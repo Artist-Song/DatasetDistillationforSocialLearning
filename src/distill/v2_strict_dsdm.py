@@ -542,7 +542,7 @@ def distill_images_with_strict_dsdm(
     aug_type = packet_cfg.get("aug_type", "color_crop_cutout")
     idx_from = packet_cfg.get("idx_from", 0)
     idx_to = packet_cfg.get("idx_to", -1)
-    metric = packet_cfg.get("metric", "l1")
+    metric = packet_cfg.get("metric", "mse")
     cov_weight = packet_cfg.get("cov_weight", 50.0)
     smooth_iter = packet_cfg.get("smooth_iter", 2000)
     smooth_factor = packet_cfg.get("smooth_factor", 0.99)

@@ -53,9 +53,7 @@ dsdm:
   factor: 1
   decode_type: single
   aug_type: color_crop_cutout
-  idx_from: 0
-  idx_to: -1
-  metric: l1
+  metric: mse
   smooth_iter: 2000
   cov_weight: 50.0
   h_p_weight: 0.2

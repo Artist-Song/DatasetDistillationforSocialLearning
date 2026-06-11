@@ -135,6 +135,38 @@ def load_expert_model(cfg: dict, agent_id: int, device: torch.device):
     return model, ckpt, ckpt_path
 
 
+def get_agent_model_name(cfg: dict, agent_id: int) -> str:
+    agent_models = cfg.get("agent_models", {})
+    if agent_id in agent_models:
+        return agent_models[agent_id]
+    if str(agent_id) in agent_models:
+        return agent_models[str(agent_id)]
+    model_cfg = cfg.get("model", {})
+    if "name" in model_cfg:
+        return model_cfg["name"]
+    raise KeyError(f"model type for agent_id={agent_id} not found")
+
+
+def default_dsdm_feature_index(model_name: str) -> Tuple[int, int]:
+    if model_name == "conv":
+        return 2, -1
+    if model_name in {"resnet", "resnet_ap"}:
+        return 4, -1
+    raise ValueError(f"unknown model_name for DSDM feature index: {model_name}")
+
+
+def expected_strict_dsdm_packet_meta(cfg: dict, sender_id: int) -> dict:
+    dsdm_cfg = cfg.get("dsdm", {})
+    packet_cfg = cfg.get("packet", {})
+    model_name = get_agent_model_name(cfg, sender_id)
+    idx_from, idx_to = default_dsdm_feature_index(model_name)
+    return {
+        "idx_from": dsdm_cfg.get("idx_from", packet_cfg.get("idx_from", idx_from)),
+        "idx_to": dsdm_cfg.get("idx_to", packet_cfg.get("idx_to", idx_to)),
+        "metric": "mse",
+    }
+
+
 def load_other_packets(cfg: dict, receiver_id: int, packet_source: str, num_agents: int) -> Tuple[Optional[TensorDataset], List[dict]]:
     packet_dir = get_v2_packet_dir(cfg, packet_source)
     packets = []
@@ -153,6 +185,16 @@ def load_other_packets(cfg: dict, receiver_id: int, packet_source: str, num_agen
                 f"packet IPC mismatch for {packet_path}: found {actual_ipc}, expected {expected_ipc}. "
                 "Rebuild packets with run_build_packets_v2 before socialization."
             )
+        if packet_source == "strict_dsdm":
+            expected_meta = expected_strict_dsdm_packet_meta(cfg, sender_id)
+            for key, expected_value in expected_meta.items():
+                actual_value = (packet.meta or {}).get(key)
+                if actual_value != expected_value:
+                    raise RuntimeError(
+                        f"strict DSDM packet metadata mismatch for {packet_path}: "
+                        f"{key}={actual_value}, expected {expected_value}. "
+                        "Rebuild strict_dsdm packets before socialization."
+                    )
         packets.append(packet)
         meta = dict(packet.meta)
         meta.setdefault("sender_id", int(packet.sender_id))
