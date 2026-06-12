@@ -443,13 +443,21 @@ def add_loss(loss_sum, loss):
         return loss_sum + loss
 
 
+def get_feature_list(model, x, idx_from, idx_to):
+    """兼容不同模型的 get_feature 返回格式，只取特征列表。"""
+    output = model.get_feature(x, idx_from, idx_to)
+    if isinstance(output, tuple):
+        return output[0]
+    return output
+
+
 def matchloss(args, img_real, img_syn, model, h_p=None):
+    """计算真实样本和蒸馏样本之间的语义匹配损失。"""
     loss = None
     k = img_real.shape[0]
     with torch.no_grad():
-        feat_tg, _ = model.get_feature(
-            img_real[:k], args.idx_from, args.idx_to)
-    feat, _ = model.get_feature(img_syn, args.idx_from, args.idx_to)
+        feat_tg = get_feature_list(model, img_real[:k], args.idx_from, args.idx_to)
+    feat = get_feature_list(model, img_syn, args.idx_from, args.idx_to)
 
     proto_loss = add_loss(loss, dist(
         feat_tg[len(feat_tg)-1].mean(0), feat[len(feat)-1].mean(0), method=args.metric))
@@ -578,12 +586,12 @@ def condense(args, logger, device='cuda'):
             ts.stamp("aug")
             if (it == 0):
                 with torch.no_grad():
-                    feature_h, _ = model.get_feature(syn_img_aug, args.idx_from, args.idx_to)
+                    feature_h = get_feature_list(model, syn_img_aug, args.idx_from, args.idx_to)
                 smooth_syns[c] = feature_h[len(feature_h)-1].mean(0)
                 h_p[c] = smooth_syns[c]
             else:
                 with torch.no_grad():
-                    feature_h, _ = model.get_feature(syn_img_aug, args.idx_from, args.idx_to)
+                    feature_h = get_feature_list(model, syn_img_aug, args.idx_from, args.idx_to)
                 smooth_syns[c] = feature_h[len(feature_h)-1].mean(0)
                 h_p[c] = (1 -args.smooth_factor) * smooth_syns[c] + args.smooth_factor * h_p[c]
 
