@@ -85,8 +85,8 @@ agents:
 
 social_learning:
   receiver:
-    epochs: 1500
-    lr: 0.01
+    epochs: 500
+    lr: 0.001
     lambda_fr: 0.05
 
 evaluation:
