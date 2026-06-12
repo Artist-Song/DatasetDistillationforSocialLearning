@@ -13,6 +13,7 @@ from agent_data import (
 )
 from agent_trainer import prepare_agent_pretrained_dir, train_agent_experts
 from config_adapter import args_to_pretty_json, build_dsdm_args_from_config, load_config
+from progress_timer import ProgressTimer
 from social_output_manager import (
     append_social_result,
     prepare_social_output_dirs,
@@ -28,6 +29,22 @@ ROOT = Path(__file__).resolve().parent
 DSDM_ROOT = ROOT / "DSDM"
 if str(DSDM_ROOT) not in sys.path:
     sys.path.insert(0, str(DSDM_ROOT))
+
+
+def _stage_banner(stage_name, detail=""):
+    """打印阶段开始提示，便于在长日志中定位进度。"""
+    print("")
+    print("=" * 72)
+    print(f"[stage] {stage_name}")
+    if detail:
+        print(f"[detail] {detail}")
+    print("=" * 72)
+
+
+def _stage_done(stage_name):
+    """打印阶段完成提示。"""
+    print(f"[done] {stage_name}")
+    print("")
 
 
 def parse_cli():
@@ -62,18 +79,26 @@ def _print_dry_run(args, cli):
 
 def _stage_train_experts(cfg, config_path, base_args, cli):
     """训练每个 agent 的 expert guide model pool。"""
-    for agent_id in get_agent_ids(cli.only_agent):
+    agent_ids = get_agent_ids(cli.only_agent)
+    _stage_banner("train_experts", f"agents={agent_ids}")
+    progress = ProgressTimer(len(agent_ids), name="train_experts")
+    for index, agent_id in enumerate(agent_ids, start=1):
         agent_args = build_agent_args(cfg, config_path, agent_id)
         os.environ["CUDA_VISIBLE_DEVICES"] = str(agent_args.gpu_id)
         print(f"[train_experts] agent={agent_id} classes={AGENT_CLASS_SPLIT[agent_id]}")
         train_agent_experts(agent_args, agent_id, resume=cli.resume, overwrite=cli.overwrite)
+        progress.update(index, extra=f"agent={agent_id}")
+    _stage_done("train_experts")
 
 
 def _stage_distill_packets(cfg, config_path, base_args, cli):
     """为每个 agent 运行 DSDM 蒸馏并生成自己的 packet。"""
     from DSDM import run_dsdm
 
-    for agent_id in get_agent_ids(cli.only_agent):
+    agent_ids = get_agent_ids(cli.only_agent)
+    _stage_banner("distill_packets", f"agents={agent_ids}")
+    progress = ProgressTimer(len(agent_ids), name="distill_packets")
+    for index, agent_id in enumerate(agent_ids, start=1):
         agent_args = build_agent_args(cfg, config_path, agent_id)
         agent_args.save_pretrain_dir = str(prepare_agent_pretrained_dir(agent_args, agent_id))
         agent_args.save_dir = str(get_agent_dir(agent_args, agent_id) / "checkpoints")
@@ -82,10 +107,14 @@ def _stage_distill_packets(cfg, config_path, base_args, cli):
         os.environ["CUDA_VISIBLE_DEVICES"] = str(agent_args.gpu_id)
         print(f"[distill_packets] agent={agent_id} model={agent_args.net_type} classes={agent_args.active_class_ids}")
         run_dsdm(agent_args)
+        progress.update(index, extra=f"agent={agent_id}")
+    _stage_done("distill_packets")
 
 
 def _stage_build_communication(base_args, cli):
     """把 agent packet 注册到 packet_hub 并写 manifest。"""
+    agent_ids = get_agent_ids(cli.only_agent)
+    _stage_banner("build_communication", f"agents={agent_ids}")
     rows = []
     if cli.only_agent is not None:
         print("[warning] --only-agent build_communication 只更新指定 agent，避免覆盖完整 manifest。")
@@ -94,21 +123,27 @@ def _stage_build_communication(base_args, cli):
             rows = [row for row in rows if int(row["sender_agent"]) != int(cli.only_agent)]
         except FileNotFoundError:
             print("[warning] 当前没有已有 manifest，将写入只包含指定 agent 的临时 manifest。")
-    for agent_id in get_agent_ids(cli.only_agent):
+    progress = ProgressTimer(len(agent_ids), name="build_communication")
+    for index, agent_id in enumerate(agent_ids, start=1):
         agent_dir = get_agent_dir(base_args, agent_id)
         packet_path = agent_dir / "packets" / "dsdm_packet.pt"
         if not packet_path.exists():
             raise FileNotFoundError(f"缺少 agent packet: {packet_path}")
         rows.append(register_agent_packet(base_args, agent_id, packet_path))
+        progress.update(index, extra=f"agent={agent_id}")
     manifest_path = write_packet_manifest(base_args, rows)
     print(f"[build_communication] manifest: {manifest_path}")
+    _stage_done("build_communication")
 
 
 def _stage_train_receivers(base_args, cli):
     """读取 packet_hub 并训练每个 receiver。"""
     cfg = load_config(cli.config)
     rows = read_packet_manifest(base_args)
-    for receiver_id in get_receiver_ids(cli.only_receiver):
+    receiver_ids = get_receiver_ids(cli.only_receiver)
+    _stage_banner("train_receivers", f"receivers={receiver_ids}")
+    progress = ProgressTimer(len(receiver_ids), name="train_receivers")
+    for index, receiver_id in enumerate(receiver_ids, start=1):
         receiver_args = build_agent_args(cfg, cli.config, receiver_id)
         receiver_cfg = cfg.get("social_learning", {}).get("receiver", {})
         receiver_args.receiver_epochs = receiver_cfg.get("epochs", receiver_args.epochs)
@@ -117,6 +152,8 @@ def _stage_train_receivers(base_args, cli):
         print(f"[train_receivers] receiver={receiver_id} classes={receiver_args.active_class_ids}")
         result = SocialTrainer(receiver_args, receiver_id, rows).train()
         append_social_result(base_args, result)
+        progress.update(index, extra=f"receiver={receiver_id}")
+    _stage_done("train_receivers")
 
 
 def main():
@@ -132,14 +169,37 @@ def main():
         _print_dry_run(base_args, cli)
         return
 
+    stages = []
     if cli.stage in {"train_experts", "all"}:
-        _stage_train_experts(cfg, cli.config, base_args, cli)
+        stages.append("train_experts")
     if cli.stage in {"distill_packets", "all"}:
-        _stage_distill_packets(cfg, cli.config, base_args, cli)
+        stages.append("distill_packets")
     if cli.stage in {"build_communication", "all"}:
-        _stage_build_communication(base_args, cli)
+        stages.append("build_communication")
     if cli.stage in {"train_receivers", "all"}:
+        stages.append("train_receivers")
+
+    _stage_banner("social_pipeline", f"stages={stages}")
+    pipeline_progress = ProgressTimer(len(stages), name="social_pipeline")
+    finished = 0
+
+    if "train_experts" in stages:
+        _stage_train_experts(cfg, cli.config, base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="train_experts")
+    if "distill_packets" in stages:
+        _stage_distill_packets(cfg, cli.config, base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="distill_packets")
+    if "build_communication" in stages:
+        _stage_build_communication(base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="build_communication")
+    if "train_receivers" in stages:
         _stage_train_receivers(base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="train_receivers")
+    _stage_done("social_pipeline")
 
 
 if __name__ == "__main__":
