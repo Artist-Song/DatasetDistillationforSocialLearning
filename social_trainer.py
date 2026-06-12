@@ -85,12 +85,15 @@ class SocialTrainer:
         before = evaluate_receiver_model(self.args, model_old, self.receiver_agent, self.device)
         images, labels, packets = consume_manifest_packets(self.args, self.manifest_rows)
         loader = _build_balanced_loader(self.args, images, labels)
-        optimizer = optim.SGD(model_new.parameters(), lr=self.args.lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        receiver_lr = float(getattr(self.args, "receiver_lr", self.args.lr))
+        receiver_epochs = int(getattr(self.args, "receiver_epochs", self.args.epochs))
+        lambda_fr = float(getattr(self.args, "lambda_fr", 0.05))
+        optimizer = optim.SGD(model_new.parameters(), lr=receiver_lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         criterion = nn.CrossEntropyLoss()
         last_cls = 0.0
         last_fr = 0.0
         model_new.train()
-        for _ in range(int(self.args.epochs)):
+        for _ in range(receiver_epochs):
             for batch_images, batch_labels in loader:
                 batch_images = batch_images.to(self.device)
                 batch_labels = batch_labels.to(self.device)
@@ -98,7 +101,7 @@ class SocialTrainer:
                 logits = model_new(batch_images)
                 loss_cls = criterion(logits, batch_labels)
                 loss_fr = self._compute_fr_loss(model_old, model_new, batch_images, batch_labels)
-                loss = loss_cls + 0.05 * loss_fr
+                loss = loss_cls + lambda_fr * loss_fr
                 loss.backward()
                 optimizer.step()
                 last_cls = float(loss_cls.detach().cpu())

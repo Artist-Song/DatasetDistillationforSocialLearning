@@ -57,6 +57,38 @@ communication:
   enabled: false
   protocol: none
 
+agents:
+  num_agents: 5
+  num_classes: 10
+  class_split:
+    agent_0:
+      - 0
+      - 1
+    agent_1:
+      - 2
+      - 3
+    agent_2:
+      - 4
+      - 5
+    agent_3:
+      - 6
+      - 7
+    agent_4:
+      - 8
+      - 9
+  model_split:
+    agent_0: convnet
+    agent_1: convnet
+    agent_2: resnet
+    agent_3: resnet
+    agent_4: resnet_ap
+
+social_learning:
+  receiver:
+    epochs: 1500
+    lr: 0.01
+    lambda_fr: 0.05
+
 evaluation:
   enabled: true
   epochs: 1500

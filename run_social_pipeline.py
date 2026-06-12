@@ -87,6 +87,13 @@ def _stage_distill_packets(cfg, config_path, base_args, cli):
 def _stage_build_communication(base_args, cli):
     """把 agent packet 注册到 packet_hub 并写 manifest。"""
     rows = []
+    if cli.only_agent is not None:
+        print("[warning] --only-agent build_communication 只更新指定 agent，避免覆盖完整 manifest。")
+        try:
+            rows = read_packet_manifest(base_args)
+            rows = [row for row in rows if int(row["sender_agent"]) != int(cli.only_agent)]
+        except FileNotFoundError:
+            print("[warning] 当前没有已有 manifest，将写入只包含指定 agent 的临时 manifest。")
     for agent_id in get_agent_ids(cli.only_agent):
         agent_dir = get_agent_dir(base_args, agent_id)
         packet_path = agent_dir / "packets" / "dsdm_packet.pt"
@@ -99,13 +106,14 @@ def _stage_build_communication(base_args, cli):
 
 def _stage_train_receivers(base_args, cli):
     """读取 packet_hub 并训练每个 receiver。"""
+    cfg = load_config(cli.config)
     rows = read_packet_manifest(base_args)
     for receiver_id in get_receiver_ids(cli.only_receiver):
-        receiver_args = build_dsdm_args_from_config(load_config(cli.config), config_path=cli.config)
-        receiver_args.net_type = AGENT_MODEL_SPLIT[int(receiver_id)]
-        receiver_args.num_classes = 10
-        receiver_args.nclass = 10
-        receiver_args.active_class_ids = list(AGENT_CLASS_SPLIT[int(receiver_id)])
+        receiver_args = build_agent_args(cfg, cli.config, receiver_id)
+        receiver_cfg = cfg.get("social_learning", {}).get("receiver", {})
+        receiver_args.receiver_epochs = receiver_cfg.get("epochs", receiver_args.epochs)
+        receiver_args.receiver_lr = receiver_cfg.get("lr", receiver_args.lr)
+        receiver_args.lambda_fr = receiver_cfg.get("lambda_fr", 0.05)
         print(f"[train_receivers] receiver={receiver_id} classes={receiver_args.active_class_ids}")
         result = SocialTrainer(receiver_args, receiver_id, rows).train()
         append_social_result(base_args, result)

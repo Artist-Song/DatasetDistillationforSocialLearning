@@ -40,14 +40,18 @@ def consume_packet_for_training(args, packet_path):
     source = packet.get("source", "")
     if source == "dsdm":
         images, labels = _decode_dsdm_images(args, packet)
+        decoded_for_training = bool(images.shape[0] != packet["images"].shape[0])
     elif source in {"heuristic", "importance"}:
         images, labels = packet["images"].cpu(), packet["labels"].cpu()
+        decoded_for_training = False
     else:
         raise ValueError(f"不支持的 packet source: {source}")
     return {
         "images": images.float(),
         "labels": labels.long(),
         "raw_images": int(packet["images"].shape[0]),
+        "num_images": int(images.shape[0]),
+        "decoded_for_training": decoded_for_training,
         "source": source,
         "class_ids": packet.get("class_ids", []),
         "meta": packet.get("meta", {}),
