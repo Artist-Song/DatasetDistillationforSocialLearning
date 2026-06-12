@@ -375,6 +375,7 @@ def load_resized_data(args):
     active_class_ids = getattr(args, 'active_class_ids', None)
     if active_class_ids is not None:
         train_dataset = ActiveClassDataset(train_dataset, active_class_ids)
+        val_dataset = ActiveClassDataset(val_dataset, active_class_ids)
 
     val_loader = MultiEpochsDataLoader(val_dataset,
                                        batch_size=args.batch_size // 2,
