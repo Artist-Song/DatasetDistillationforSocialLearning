@@ -39,6 +39,42 @@ def _build_val_loader(args):
     return val_loader
 
 
+def _decode_dsdm_packet(args, packet):
+    """按 DSDM multi-formation 规则解码 DSDM packet。"""
+    if packet.get("source") != "dsdm" or args.factor <= 1:
+        return packet
+
+    from test import decode_fn
+
+    images = packet["images"]
+    labels = packet["labels"]
+    data_dec = []
+    target_dec = []
+    class_ids = packet.get("class_ids", sorted({int(x) for x in labels.tolist()}))
+    for class_id in class_ids:
+        mask = labels == int(class_id)
+        data_c = images[mask].detach()
+        target_c = labels[mask].detach()
+        data_c, target_c = decode_fn(
+            data_c,
+            target_c,
+            args.factor,
+            args.decode_type,
+            bound=args.batch_syn_max,
+        )
+        data_dec.append(data_c)
+        target_dec.append(target_c)
+
+    decoded = dict(packet)
+    decoded["images"] = torch.cat(data_dec).cpu()
+    decoded["labels"] = torch.cat(target_dec).cpu()
+    decoded["meta"] = dict(packet.get("meta", {}))
+    decoded["meta"]["decoded_for_eval"] = True
+    decoded["meta"]["raw_num_images"] = int(images.shape[0])
+    decoded["meta"]["eval_num_images"] = int(decoded["images"].shape[0])
+    return decoded
+
+
 def _build_packet_loader(args, packet):
     """把 packet 图片和标签转换为 DSDM test_data 可用的 loader。"""
     from data import MultiEpochsDataLoader, TensorDataset
@@ -72,6 +108,7 @@ def evaluate_packet(args, packet_source):
     if not packet_path.exists():
         raise FileNotFoundError(f"packet 不存在: {packet_path}")
     packet = torch.load(packet_path, map_location="cpu")
+    packet = _decode_dsdm_packet(args, packet)
     train_loader = _build_packet_loader(args, packet)
     val_loader = _build_val_loader(args)
     best_acc = float(test_data(args, train_loader, val_loader, repeat=args.repeat, test_resnet=False))
@@ -82,6 +119,8 @@ def evaluate_packet(args, packet_source):
         "train_acc": 0.0,
         "class_ids": packet.get("class_ids", []),
         "ipc": packet.get("ipc", args.ipc),
+        "num_images": int(packet["images"].shape[0]),
+        "decoded_for_eval": bool(packet.get("meta", {}).get("decoded_for_eval", False)),
     }
     save_metrics(args, f"packet_eval_{packet_source}", metrics)
     append_global_result(
