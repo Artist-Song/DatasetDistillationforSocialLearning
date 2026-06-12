@@ -18,6 +18,27 @@ from pathlib import Path
 import random
 
 
+class ActiveClassDataset(torch.utils.data.Dataset):
+    """过滤当前 agent 的 expert classes，同时保留全局标签。"""
+
+    def __init__(self, dataset, active_class_ids):
+        """按 active_class_ids 建立子集索引。"""
+        self.dataset = dataset
+        self.active_class_ids = [int(c) for c in active_class_ids]
+        targets = getattr(dataset, 'targets', getattr(dataset, 'labels', None))
+        self.indices = [i for i, y in enumerate(targets) if int(y) in self.active_class_ids]
+        self.targets = [int(targets[i]) for i in self.indices]
+        self.nclass = getattr(dataset, 'nclass', 10)
+
+    def __len__(self):
+        """返回子集样本数。"""
+        return len(self.indices)
+
+    def __getitem__(self, index):
+        """返回子集样本和 CIFAR-10 全局标签。"""
+        return self.dataset[self.indices[index]]
+
+
 def _try_stage1_output(func_name, *params, **kwargs):
     """尝试调用 Stage 1 输出管理器，失败时保留 DSDM 原流程。"""
     try:
@@ -47,7 +68,8 @@ class Synthesizer():
 
     def __init__(self, args, nclass, nchannel, hs, ws, device='cuda'):
         self.ipc = args.ipc
-        self.nclass = nclass
+        self.class_ids = [int(c) for c in getattr(args, 'active_class_ids', list(range(nclass)))]
+        self.nclass = len(self.class_ids)
         self.nchannel = nchannel
         self.size = (hs, ws)
         self.device = device
@@ -57,13 +79,14 @@ class Synthesizer():
                                 requires_grad=True,
                                 device=self.device)
         self.data.data = torch.clamp(self.data.data / 4 + 0.5, min=0., max=1.)
-        self.targets = torch.tensor([np.ones(self.ipc) * i for i in range(nclass)],
+        self.targets = torch.tensor([np.ones(self.ipc) * i for i in self.class_ids],
                                     dtype=torch.long,
                                     requires_grad=False,
                                     device=self.device).view(-1)
-        self.cls_idx = [[] for _ in range(self.nclass)]
+        self.class_to_pos = {class_id: pos for pos, class_id in enumerate(self.class_ids)}
+        self.cls_idx = {class_id: [] for class_id in self.class_ids}
         for i in range(self.data.shape[0]):
-            self.cls_idx[self.targets[i]].append(i)
+            self.cls_idx[int(self.targets[i])].append(i)
 
         print("\nDefine synthetic data: ", self.data.shape)
 
@@ -77,15 +100,17 @@ class Synthesizer():
         """
         if init_type == 'random':
             print("Random initialize synset")
-            for c in range(self.nclass):
-                img, _ = loader.class_sample(c, self.ipc)
-                self.data.data[self.ipc * c:self.ipc *
-                               (c + 1)] = img.data.to(self.device)
+            for class_id in self.class_ids:
+                pos = self.class_to_pos[class_id]
+                img, _ = loader.class_sample(class_id, self.ipc)
+                self.data.data[self.ipc * pos:self.ipc *
+                               (pos + 1)] = img.data.to(self.device)
 
         elif init_type == 'mix':
             print("Mixed initialize synset")
-            for c in range(self.nclass):
-                img, _ = loader.class_sample(c, self.ipc * self.factor**2)
+            for class_id in self.class_ids:
+                pos = self.class_to_pos[class_id]
+                img, _ = loader.class_sample(class_id, self.ipc * self.factor**2)
                 img = img.data.to(self.device)
 
                 s = self.size[0] // self.factor
@@ -101,7 +126,7 @@ class Synthesizer():
                         w_r = s + 1 if j < remained else s
                         img_part = F.interpolate(
                             img[k * n:(k + 1) * n], size=(h_r, w_r))
-                        self.data.data[n * c:n * (c + 1), :, h_loc:h_loc + h_r,
+                        self.data.data[n * pos:n * (pos + 1), :, h_loc:h_loc + h_r,
                                        w_loc:w_loc + w_r] = img_part
                         w_loc += w_r
                         k += 1
@@ -211,8 +236,10 @@ class Synthesizer():
     def sample(self, c, max_size=128):
         """Sample synthetic data per class
         """
-        idx_from = self.ipc * c
-        idx_to = self.ipc * (c + 1)
+        class_id = int(c)
+        pos = self.class_to_pos[class_id]
+        idx_from = self.ipc * pos
+        idx_to = self.ipc * (pos + 1)
         data = self.data[idx_from:idx_to]
         target = self.targets[idx_from:idx_to]
 
@@ -244,9 +271,10 @@ class Synthesizer():
 
         data_dec = []
         target_dec = []
-        for c in range(self.nclass):
-            idx_from = self.ipc * c
-            idx_to = self.ipc * (c + 1)
+        for class_id in self.class_ids:
+            pos = self.class_to_pos[class_id]
+            idx_from = self.ipc * pos
+            idx_to = self.ipc * (pos + 1)
             data = self.data[idx_from:idx_to].detach()
             target = self.targets[idx_from:idx_to].detach()
             data, target = self.decode(data, target)
@@ -344,6 +372,9 @@ def load_resized_data(args):
         train_dataset.nclass = 10
 
 
+    active_class_ids = getattr(args, 'active_class_ids', None)
+    if active_class_ids is not None:
+        train_dataset = ActiveClassDataset(train_dataset, active_class_ids)
 
     val_loader = MultiEpochsDataLoader(val_dataset,
                                        batch_size=args.batch_size // 2,
@@ -464,6 +495,7 @@ def condense(args, logger, device='cuda'):
                                       pin_memory=True,
                                       drop_last=True)
     nclass = trainset.nclass
+    active_class_ids = [int(c) for c in getattr(args, 'active_class_ids', list(range(nclass)))]
     nch, hs, ws = trainset[0][0].shape
 
     # Define syn dataset
@@ -477,7 +509,7 @@ def condense(args, logger, device='cuda'):
 
     # Define augmentation function
     aug, aug_rand = diffaug(args)
-    aug_images = aug(synset.sample(0, max_size=args.batch_syn_max)[0])
+    aug_images = aug(synset.sample(active_class_ids[0], max_size=args.batch_syn_max)[0])
     save_img(os.path.join(args.save_dir, f'aug.png'),
              aug_images,
              unnormalize=True,
@@ -501,8 +533,8 @@ def condense(args, logger, device='cuda'):
 
     best_acc = -1
 
-    smooth_syns = [None] * nclass 
-    h_p = [None] * nclass
+    smooth_syns = {class_id: None for class_id in active_class_ids}
+    h_p = {class_id: None for class_id in active_class_ids}
     progress = _make_stage1_progress(args.niter, "DSDM condense")
     pretrained_paths = [
         Path(args.save_pretrain_dir) / f"{args.dataset}_model_{i}.pth"
@@ -518,7 +550,7 @@ def condense(args, logger, device='cuda'):
         synset.data.data = torch.clamp(synset.data.data, min=0., max=1.)
         ts.set()
 
-        for c in range(nclass):
+        for c in active_class_ids:
             img, lab = loader_real.class_sample(c)
             img_syn, lab_syn = synset.sample(c, max_size=args.batch_syn_max)
             ts.stamp("data")
@@ -538,7 +570,7 @@ def condense(args, logger, device='cuda'):
             ts.stamp("backward")
             ts.flush()
      
-        for c in range(nclass):
+        for c in active_class_ids:
             img_syn, lab_syn = synset.sample(c, max_size=args.batch_syn_max)
             ts.stamp("data")
             syn_img_aug = aug(torch.cat([img_syn]))
@@ -557,7 +589,7 @@ def condense(args, logger, device='cuda'):
          # Logging
         if it % it_log == 0:
             logger(
-                f"{utils.get_time()} (Iter {it:3d}) loss: {loss_total/nclass:.1f}")
+                f"{utils.get_time()} (Iter {it:3d}) loss: {loss_total/len(active_class_ids):.1f}")
         if (it + 1) in it_test:
             if not args.test:
                 conv_result = synset.test(args, val_loader, logger)
@@ -572,10 +604,18 @@ def condense(args, logger, device='cuda'):
                         args,
                         synset.data.detach(),
                         synset.targets.detach(),
-                        list(range(nclass)),
+                    active_class_ids,
                         'dsdm',
                         'DSDM',
-                        meta={'best_acc': float(best_acc), 'iteration': int(it + 1)},
+                        meta={
+                            'best_acc': float(best_acc),
+                            'iteration': int(it + 1),
+                            'sender_agent': getattr(args, 'agent_id', None),
+                            'sender_model': getattr(args, 'sender_model', getattr(args, 'net_type', '')),
+                            'factor': int(args.factor),
+                            'decode_type': args.decode_type,
+                            'packet_format': 'compact_multi_formation',
+                        },
                     )
                     _try_stage1_output('save_best_visuals', args, synset.data.detach(), synset.targets.detach())
                     print("best img and data updated!")
@@ -586,7 +626,7 @@ def condense(args, logger, device='cuda'):
                 logger(
                     "->->->->->->->->->->->->-> Best Result: {:.1f}".format(best_acc))
         if progress is not None:
-            progress.update(it + 1, extra=f"loss={loss_total/nclass:.2f} best={best_acc:.1f}")
+            progress.update(it + 1, extra=f"loss={loss_total/len(active_class_ids):.2f} best={best_acc:.1f}")
 
     if progress is not None:
         progress.close(extra=f"best={best_acc:.1f}")

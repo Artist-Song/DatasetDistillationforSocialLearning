@@ -135,6 +135,9 @@ def save_packet(args, images, labels, class_ids, source, method, meta=None):
         "source": source,
         "dataset": args.dataset,
         "ipc": int(args.ipc),
+        "factor": int(getattr(args, "factor", 1)) if source == "dsdm" else 1,
+        "decode_type": getattr(args, "decode_type", "single") if source == "dsdm" else "none",
+        "packet_format": "compact_multi_formation" if source == "dsdm" else "raw_images",
         "meta": packet_meta,
     }
     _validate_packet_payload(payload)

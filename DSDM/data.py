@@ -346,6 +346,9 @@ class ClassBatchSampler(object):
         self.samplers = []
         for indices in cls_idx:
             n_ex = len(indices)
+            if n_ex == 0:
+                self.samplers.append(None)
+                continue
             sampler = torch.utils.data.SubsetRandomSampler(indices)
             batch_sampler = torch.utils.data.BatchSampler(sampler,
                                                           batch_size=min(n_ex, batch_size),
@@ -355,7 +358,8 @@ class ClassBatchSampler(object):
     def __iter__(self):
         while True:
             for sampler in self.samplers:
-                yield next(sampler)
+                if sampler is not None:
+                    yield next(sampler)
 
     def __len__(self):
         return len(self.samplers)
@@ -412,6 +416,8 @@ class ClassDataLoader(MultiEpochsDataLoader):
         if ipc > 0:
             indices = self.cls_idx[c][:ipc]
         else:
+            if self.class_sampler.samplers[c] is None:
+                raise ValueError(f"class {c} has no samples")
             indices = next(self.class_sampler.samplers[c])
 
         data = torch.stack([self.dataset[i][0] for i in indices])
@@ -461,6 +467,8 @@ class ClassMemDataLoader():
         if ipc > 0:
             indices = self.cls_idx[c][:ipc]
         else:
+            if self.class_sampler.samplers[c] is None:
+                raise ValueError(f"class {c} has no samples")
             indices = next(self.class_sampler.samplers[c])
 
         data = torch.stack([self.data[i] for i in indices])

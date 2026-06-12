@@ -14,6 +14,8 @@ DSDM_DEFAULT_ARGS = {
     "data_dir": "./data",
     "imagenet_dir": "/ssd_data/imagenet/",
     "nclass": 10,
+    "num_classes": 10,
+    "active_class_ids": None,
     "dseed": 0,
     "size": 32,
     "phase": -1,
@@ -257,6 +259,7 @@ def _apply_config_overrides(args, cfg):
     args.dataset = dataset.get("name", args.dataset)
     args.data_dir = dataset.get("data_dir", args.data_dir)
     args.nclass = dataset.get("num_classes", args.nclass)
+    args.num_classes = dataset.get("num_classes", args.nclass)
     args.size = dataset.get("image_size", args.size)
 
     args.net_type = model_name
