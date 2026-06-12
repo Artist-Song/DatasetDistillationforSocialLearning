@@ -13,7 +13,9 @@ from agent_data import (
 )
 from agent_trainer import prepare_agent_pretrained_dir, train_agent_experts
 from config_adapter import args_to_pretty_json, build_dsdm_args_from_config, load_config
+from output_manager import save_packet
 from progress_timer import ProgressTimer
+from selection_methods import build_heuristic_packet, build_importance_packet
 from social_output_manager import (
     append_social_result,
     prepare_social_output_dirs,
@@ -54,9 +56,11 @@ def parse_cli():
     parser.add_argument(
         "--stage",
         default="all",
-        choices=["train_experts", "distill_packets", "build_communication", "train_receivers", "all"],
+        choices=["train_experts", "distill_packets", "build_selection_packets", "build_communication", "train_receivers", "all"],
         help="运行阶段",
     )
+    parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance"], help="packet 方法")
+    parser.add_argument("--init-mode", default="expert", choices=["expert", "scratch"], help="receiver 初始化方式")
     parser.add_argument("--dry-run", action="store_true", help="只打印计划，不启动训练")
     parser.add_argument("--resume", action="store_true", help="已存在输出时尽量跳过")
     parser.add_argument("--overwrite", action="store_true", help="覆盖已有输出")
@@ -70,6 +74,8 @@ def _print_dry_run(args, cli):
     print("social pipeline dry-run")
     print(args_to_pretty_json(args))
     print(f"stage: {cli.stage}")
+    print(f"packet_method: {cli.packet_method}")
+    print(f"init_mode: {cli.init_mode}")
     print(f"agents: {get_agent_ids(cli.only_agent)}")
     print(f"receivers: {get_receiver_ids(cli.only_receiver)}")
     for agent_id, classes in AGENT_CLASS_SPLIT.items():
@@ -111,27 +117,70 @@ def _stage_distill_packets(cfg, config_path, base_args, cli):
     _stage_done("distill_packets")
 
 
+def _load_agent_guide_models(args, agent_id):
+    """加载单个 agent 的 guide model pool，用于 importance 选样。"""
+    import torch
+    from train import define_model
+
+    device = torch.device("cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu")
+    models = []
+    ckpt_dir = get_agent_dir(args, agent_id) / "checkpoints"
+    for model_idx in range(int(args.pretrained_model_number)):
+        path = ckpt_dir / f"guide_model_{model_idx}.pt"
+        if not path.exists():
+            continue
+        model = define_model(args, 10).to(device)
+        model.load_state_dict(torch.load(path, map_location=device))
+        models.append(model)
+    return models
+
+
+def _stage_build_selection_packets(cfg, config_path, base_args, cli):
+    """为每个 agent 构建 Heuristic 或 Importance 核心集 packet。"""
+    from agent_data import get_agent_train_dataset
+
+    if cli.packet_method not in {"heuristic", "importance"}:
+        print("[build_selection_packets] dsdm packet 由 distill_packets 生成，此阶段跳过。")
+        return
+    agent_ids = get_agent_ids(cli.only_agent)
+    _stage_banner("build_selection_packets", f"method={cli.packet_method} agents={agent_ids}")
+    progress = ProgressTimer(len(agent_ids), name=f"build_{cli.packet_method}")
+    for index, agent_id in enumerate(agent_ids, start=1):
+        agent_args = build_agent_args(cfg, config_path, agent_id)
+        train_set = get_agent_train_dataset(agent_args, agent_id, normalize=False)
+        if cli.packet_method == "heuristic":
+            images, labels, class_ids = build_heuristic_packet(agent_args, train_set)
+        else:
+            guide_models = _load_agent_guide_models(agent_args, agent_id)
+            images, labels, class_ids = build_importance_packet(agent_args, train_set, guide_models)
+        agent_args.output_root = str(get_agent_dir(agent_args, agent_id))
+        agent_args.run_name = ""
+        save_packet(agent_args, images, labels, class_ids, source=cli.packet_method, method=cli.packet_method.upper())
+        progress.update(index, extra=f"agent={agent_id}")
+    _stage_done("build_selection_packets")
+
+
 def _stage_build_communication(base_args, cli):
     """把 agent packet 注册到 packet_hub 并写 manifest。"""
     agent_ids = get_agent_ids(cli.only_agent)
-    _stage_banner("build_communication", f"agents={agent_ids}")
+    _stage_banner("build_communication", f"method={cli.packet_method} agents={agent_ids}")
     rows = []
     if cli.only_agent is not None:
         print("[warning] --only-agent build_communication 只更新指定 agent，避免覆盖完整 manifest。")
         try:
-            rows = read_packet_manifest(base_args)
+            rows = read_packet_manifest(base_args, cli.packet_method)
             rows = [row for row in rows if int(row["sender_agent"]) != int(cli.only_agent)]
         except FileNotFoundError:
             print("[warning] 当前没有已有 manifest，将写入只包含指定 agent 的临时 manifest。")
     progress = ProgressTimer(len(agent_ids), name="build_communication")
     for index, agent_id in enumerate(agent_ids, start=1):
         agent_dir = get_agent_dir(base_args, agent_id)
-        packet_path = agent_dir / "packets" / "dsdm_packet.pt"
+        packet_path = agent_dir / "packets" / f"{cli.packet_method}_packet.pt"
         if not packet_path.exists():
             raise FileNotFoundError(f"缺少 agent packet: {packet_path}")
-        rows.append(register_agent_packet(base_args, agent_id, packet_path))
+        rows.append(register_agent_packet(base_args, agent_id, packet_path, cli.packet_method))
         progress.update(index, extra=f"agent={agent_id}")
-    manifest_path = write_packet_manifest(base_args, rows)
+    manifest_path = write_packet_manifest(base_args, rows, cli.packet_method)
     print(f"[build_communication] manifest: {manifest_path}")
     _stage_done("build_communication")
 
@@ -139,7 +188,7 @@ def _stage_build_communication(base_args, cli):
 def _stage_train_receivers(base_args, cli):
     """读取 packet_hub 并训练每个 receiver。"""
     cfg = load_config(cli.config)
-    rows = read_packet_manifest(base_args)
+    rows = read_packet_manifest(base_args, cli.packet_method)
     receiver_ids = get_receiver_ids(cli.only_receiver)
     _stage_banner("train_receivers", f"receivers={receiver_ids}")
     progress = ProgressTimer(len(receiver_ids), name="train_receivers")
@@ -149,6 +198,11 @@ def _stage_train_receivers(base_args, cli):
         receiver_args.receiver_epochs = receiver_cfg.get("epochs", receiver_args.epochs)
         receiver_args.receiver_lr = receiver_cfg.get("lr", receiver_args.lr)
         receiver_args.lambda_fr = receiver_cfg.get("lambda_fr", 0.05)
+        receiver_args.packet_method = cli.packet_method
+        receiver_args.init_mode = cli.init_mode
+        receiver_args.use_fr = cli.init_mode == "expert"
+        if cli.init_mode == "scratch":
+            receiver_args.lambda_fr = 0.0
         print(f"[train_receivers] receiver={receiver_id} classes={receiver_args.active_class_ids}")
         result = SocialTrainer(receiver_args, receiver_id, rows).train()
         append_social_result(base_args, result)
@@ -174,6 +228,8 @@ def main():
         stages.append("train_experts")
     if cli.stage in {"distill_packets", "all"}:
         stages.append("distill_packets")
+    if cli.stage in {"build_selection_packets"}:
+        stages.append("build_selection_packets")
     if cli.stage in {"build_communication", "all"}:
         stages.append("build_communication")
     if cli.stage in {"train_receivers", "all"}:
@@ -191,6 +247,10 @@ def main():
         _stage_distill_packets(cfg, cli.config, base_args, cli)
         finished += 1
         pipeline_progress.update(finished, extra="distill_packets")
+    if "build_selection_packets" in stages:
+        _stage_build_selection_packets(cfg, cli.config, base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="build_selection_packets")
     if "build_communication" in stages:
         _stage_build_communication(base_args, cli)
         finished += 1

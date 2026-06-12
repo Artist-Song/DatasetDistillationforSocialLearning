@@ -50,6 +50,14 @@ def build_heuristic_packet(args, train_set):
 def _score_confidence(args, images, guide_models, device):
     """用 guide ensemble 计算每张图片的平均最大 softmax 置信度。"""
     batch = images.to(device)
+    try:
+        from data import MEANS, STDS
+
+        mean = torch.tensor(MEANS[args.dataset], device=device).view(1, -1, 1, 1)
+        std = torch.tensor(STDS[args.dataset], device=device).view(1, -1, 1, 1)
+        batch = (batch - mean) / std
+    except Exception:
+        pass
     scores = torch.zeros(batch.shape[0], device=device)
     for model in guide_models:
         model.eval()

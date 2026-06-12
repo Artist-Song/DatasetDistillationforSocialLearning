@@ -53,10 +53,11 @@ class SocialTrainer:
         self.args.net_type = AGENT_MODEL_SPLIT[self.receiver_agent]
         model_old = define_model(self.args, 10).to(self.device)
         model_new = define_model(self.args, 10).to(self.device)
-        expert_path = get_agent_dir(self.args, self.receiver_agent) / "checkpoints" / "expert_model.pt"
-        state = torch.load(expert_path, map_location=self.device)
-        model_old.load_state_dict(state)
-        model_new.load_state_dict(state)
+        if getattr(self.args, "init_mode", "expert") == "expert":
+            expert_path = get_agent_dir(self.args, self.receiver_agent) / "checkpoints" / "expert_model.pt"
+            state = torch.load(expert_path, map_location=self.device)
+            model_old.load_state_dict(state)
+            model_new.load_state_dict(state)
         for param in model_old.parameters():
             param.requires_grad = False
         model_old.eval()
@@ -87,7 +88,9 @@ class SocialTrainer:
         loader = _build_balanced_loader(self.args, images, labels)
         receiver_lr = float(getattr(self.args, "receiver_lr", self.args.lr))
         receiver_epochs = int(getattr(self.args, "receiver_epochs", self.args.epochs))
-        lambda_fr = float(getattr(self.args, "lambda_fr", 0.05))
+        init_mode = getattr(self.args, "init_mode", "expert")
+        use_fr = bool(getattr(self.args, "use_fr", init_mode == "expert"))
+        lambda_fr = float(getattr(self.args, "lambda_fr", 0.05)) if use_fr else 0.0
         optimizer = optim.SGD(model_new.parameters(), lr=receiver_lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         criterion = nn.CrossEntropyLoss()
         last_cls = 0.0
@@ -100,7 +103,7 @@ class SocialTrainer:
                 optimizer.zero_grad()
                 logits = model_new(batch_images)
                 loss_cls = criterion(logits, batch_labels)
-                loss_fr = self._compute_fr_loss(model_old, model_new, batch_images, batch_labels)
+                loss_fr = self._compute_fr_loss(model_old, model_new, batch_images, batch_labels) if use_fr else torch.tensor(0.0, device=self.device)
                 loss = loss_cls + lambda_fr * loss_fr
                 loss.backward()
                 optimizer.step()
@@ -113,7 +116,11 @@ class SocialTrainer:
             "receiver_agent": self.receiver_agent,
             "receiver_model": AGENT_MODEL_SPLIT[self.receiver_agent],
             "expert_classes": ",".join(str(c) for c in self.expert_classes),
-            "method": "DSDM",
+            "packet_method": getattr(self.args, "packet_method", "dsdm"),
+            "method": getattr(self.args, "packet_method", "dsdm").upper(),
+            "init_mode": init_mode,
+            "use_fr": str(use_fr).lower(),
+            "lambda_fr": lambda_fr,
             "ipc": int(self.args.ipc),
             "external_comm_images": int(external_raw),
             "acc_global_before": before["acc_global"],

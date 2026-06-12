@@ -13,7 +13,11 @@ SOCIAL_RESULT_FIELDS = [
     "receiver_agent",
     "receiver_model",
     "expert_classes",
+    "packet_method",
     "method",
+    "init_mode",
+    "use_fr",
+    "lambda_fr",
     "ipc",
     "external_comm_images",
     "acc_global_before",
@@ -56,9 +60,14 @@ def get_packet_hub_dir(args):
     return get_run_dir(args) / "packet_hub"
 
 
-def get_manifest_path(args):
-    """返回 packet manifest 路径。"""
-    return get_packet_hub_dir(args) / "packet_manifest.csv"
+def get_method_packet_hub_dir(args, packet_method):
+    """返回指定 packet 方法的 hub 目录。"""
+    return get_packet_hub_dir(args) / packet_method
+
+
+def get_manifest_path(args, packet_method="dsdm"):
+    """返回指定 packet 方法的 manifest 路径。"""
+    return get_method_packet_hub_dir(args, packet_method) / "packet_manifest.csv"
 
 
 def get_social_results_path(args):
@@ -66,25 +75,25 @@ def get_social_results_path(args):
     return get_run_dir(args) / "metrics" / "social_results.csv"
 
 
-def register_agent_packet(args, agent_id, packet_path):
+def register_agent_packet(args, agent_id, packet_path, packet_method="dsdm"):
     """把单个 agent 的 packet 复制到 packet_hub 并返回 manifest 行。"""
-    hub_dir = get_packet_hub_dir(args)
+    hub_dir = get_method_packet_hub_dir(args, packet_method)
     hub_dir.mkdir(parents=True, exist_ok=True)
-    dst = hub_dir / f"agent_{int(agent_id)}_dsdm_packet.pt"
+    dst = hub_dir / f"agent_{int(agent_id)}_{packet_method}_packet.pt"
     shutil.copyfile(packet_path, dst)
     return {
         "sender_agent": int(agent_id),
         "sender_model": AGENT_MODEL_SPLIT[int(agent_id)],
         "classes": ",".join(str(c) for c in AGENT_CLASS_SPLIT[int(agent_id)]),
-        "method": "DSDM",
+        "method": packet_method.upper(),
         "ipc": int(args.ipc),
         "packet_path": str(dst),
     }
 
 
-def write_packet_manifest(args, rows):
+def write_packet_manifest(args, rows, packet_method="dsdm"):
     """写入 packet_hub 的 packet_manifest.csv。"""
-    path = get_manifest_path(args)
+    path = get_manifest_path(args, packet_method)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=MANIFEST_FIELDS)
@@ -93,9 +102,9 @@ def write_packet_manifest(args, rows):
     return path
 
 
-def read_packet_manifest(args):
+def read_packet_manifest(args, packet_method="dsdm"):
     """读取 packet_manifest.csv 并返回字典列表。"""
-    path = get_manifest_path(args)
+    path = get_manifest_path(args, packet_method)
     with open(path, "r", encoding="utf-8", newline="") as f:
         return list(csv.DictReader(f))
 
