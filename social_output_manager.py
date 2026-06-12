@@ -31,6 +31,25 @@ SOCIAL_RESULT_FIELDS = [
     "time",
 ]
 
+OLD_SOCIAL_RESULT_FIELDS = [
+    "run_name",
+    "receiver_agent",
+    "receiver_model",
+    "expert_classes",
+    "method",
+    "ipc",
+    "external_comm_images",
+    "acc_global_before",
+    "acc_expert_before",
+    "acc_global_after",
+    "acc_expert_after",
+    "acc_new_after",
+    "forgetting",
+    "loss_cls",
+    "loss_fr",
+    "time",
+]
+
 
 def prepare_social_output_dirs(args):
     """创建第二阶段社会化学习输出目录。"""
@@ -113,6 +132,7 @@ def append_social_result(args, row):
     """追加单个 receiver 的社会化学习结果。"""
     path = get_social_results_path(args)
     path.parent.mkdir(parents=True, exist_ok=True)
+    migrate_social_results_schema(path)
     exists = path.exists()
     clean = {field: row.get(field, "") for field in SOCIAL_RESULT_FIELDS}
     clean["run_name"] = clean["run_name"] or args.run_name
@@ -123,3 +143,46 @@ def append_social_result(args, row):
             writer.writeheader()
         writer.writerow(clean)
     return path
+
+
+def migrate_social_results_schema(path):
+    """把旧版或错位的 social_results.csv 迁移到当前字段顺序。"""
+    if not path.exists():
+        return False
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames == SOCIAL_RESULT_FIELDS:
+            return False
+        rows = list(reader)
+        old_fields = reader.fieldnames or []
+
+    migrated = []
+    for row in rows:
+        migrated.append(_migrate_social_result_row(row, old_fields))
+
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=SOCIAL_RESULT_FIELDS)
+        writer.writeheader()
+        writer.writerows(migrated)
+    return True
+
+
+def _migrate_social_result_row(row, old_fields):
+    """迁移单行 social result，兼容旧表头和新行错位追加。"""
+    extra = row.get(None)
+    if extra:
+        values = [row.get(field, "") for field in old_fields] + list(extra)
+        restored = {field: values[index] if index < len(values) else "" for index, field in enumerate(SOCIAL_RESULT_FIELDS)}
+        return restored
+
+    clean = {field: "" for field in SOCIAL_RESULT_FIELDS}
+    for field in OLD_SOCIAL_RESULT_FIELDS:
+        if field in row:
+            clean[field] = row.get(field, "")
+    old_method = row.get("method", "")
+    clean["packet_method"] = row.get("packet_method", old_method.lower() if old_method else "")
+    clean["method"] = old_method
+    clean["init_mode"] = row.get("init_mode", "expert")
+    clean["use_fr"] = row.get("use_fr", "true")
+    clean["lambda_fr"] = row.get("lambda_fr", "0.05")
+    return clean
