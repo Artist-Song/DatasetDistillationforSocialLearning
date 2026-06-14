@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset, WeightedRandomSampler
 
-from agent_data import AGENT_CLASS_SPLIT, AGENT_MODEL_SPLIT, get_agent_dir, get_receiver_dir
+from agent_data import get_agent_class_split, get_agent_dir, get_agent_model_split, get_num_classes, get_receiver_dir
 from packet_consumer import consume_manifest_packets
 from social_metrics import evaluate_receiver_model
 
@@ -27,7 +27,7 @@ def _build_balanced_loader(args, images, labels):
     mean = torch.tensor(MEANS[args.dataset]).view(1, -1, 1, 1)
     std = torch.tensor(STDS[args.dataset]).view(1, -1, 1, 1)
     images = (images - mean) / std
-    counts = torch.bincount(labels, minlength=10).float()
+    counts = torch.bincount(labels, minlength=get_num_classes(args)).float()
     weights = torch.tensor([1.0 / max(1.0, counts[int(y)].item()) for y in labels], dtype=torch.float)
     sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
     dataset = TensorDataset(images.float(), labels.long())
@@ -43,16 +43,18 @@ class SocialTrainer:
         self.args = args
         self.receiver_agent = int(receiver_agent)
         self.manifest_rows = manifest_rows
-        self.expert_classes = AGENT_CLASS_SPLIT[self.receiver_agent]
+        self.class_split = get_agent_class_split(args)
+        self.model_split = get_agent_model_split(args)
+        self.expert_classes = self.class_split[self.receiver_agent]
         self.device = torch.device("cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu")
 
     def _build_models(self):
         """构建 before/after 模型并加载 receiver expert 权重。"""
         from train import define_model
 
-        self.args.net_type = AGENT_MODEL_SPLIT[self.receiver_agent]
-        model_old = define_model(self.args, 10).to(self.device)
-        model_new = define_model(self.args, 10).to(self.device)
+        self.args.net_type = self.model_split[self.receiver_agent]
+        model_old = define_model(self.args, get_num_classes(self.args)).to(self.device)
+        model_new = define_model(self.args, get_num_classes(self.args)).to(self.device)
         if getattr(self.args, "init_mode", "expert") == "expert":
             expert_path = get_agent_dir(self.args, self.receiver_agent) / "checkpoints" / "expert_model.pt"
             state = torch.load(expert_path, map_location=self.device)
@@ -114,7 +116,7 @@ class SocialTrainer:
         external_raw = sum(p["raw_images"] for p in packets if p["sender_agent"] != self.receiver_agent)
         return {
             "receiver_agent": self.receiver_agent,
-            "receiver_model": AGENT_MODEL_SPLIT[self.receiver_agent],
+            "receiver_model": self.model_split[self.receiver_agent],
             "expert_classes": ",".join(str(c) for c in self.expert_classes),
             "packet_method": getattr(self.args, "packet_method", "dsdm"),
             "method": getattr(self.args, "packet_method", "dsdm").upper(),

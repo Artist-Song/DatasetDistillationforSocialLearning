@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from agent_data import AGENT_CLASS_SPLIT, get_agent_dir, get_agent_train_dataset
+from agent_data import get_agent_class_split, get_agent_dir, get_agent_train_dataset, get_num_classes
 
 
 def _ensure_dsdm_path():
@@ -35,7 +35,7 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
     last_path = None
     for model_idx in range(int(args.pretrained_model_number)):
-        model = define_model(args, 10).to(device)
+        model = define_model(args, get_num_classes(args)).to(device)
         optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
         criterion = nn.CrossEntropyLoss()
         model.train()
@@ -68,6 +68,6 @@ def prepare_agent_pretrained_dir(args, agent_id):
     return dsdm_dir
 
 
-def describe_agent(agent_id):
+def describe_agent(agent_id, args_or_cfg=None):
     """返回 agent 的固定类别说明。"""
-    return f"agent_{agent_id}: classes={AGENT_CLASS_SPLIT[int(agent_id)]}"
+    return f"agent_{agent_id}: classes={get_agent_class_split(args_or_cfg)[int(agent_id)]}"

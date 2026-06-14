@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from agent_data import AGENT_CLASS_SPLIT, AGENT_MODEL_SPLIT, get_agent_dir, get_receiver_dir, get_run_dir
+from agent_data import get_agent_class_split, get_agent_dir, get_agent_model_split, get_receiver_dir, get_run_dir
 
 
 MANIFEST_FIELDS = ["sender_agent", "sender_model", "classes", "method", "ipc", "packet_path"]
@@ -56,7 +56,7 @@ def prepare_social_output_dirs(args):
     run_dir = get_run_dir(args)
     for subdir in ["agents", "packet_hub", "social_learning", "metrics"]:
         (run_dir / subdir).mkdir(parents=True, exist_ok=True)
-    for agent_id in AGENT_CLASS_SPLIT:
+    for agent_id in get_agent_class_split(args):
         for subdir in ["checkpoints", "packets", "synthetic", "visuals", "metrics", "logs"]:
             (get_agent_dir(args, agent_id) / subdir).mkdir(parents=True, exist_ok=True)
         for subdir in ["checkpoints", "metrics", "logs"]:
@@ -96,14 +96,16 @@ def get_social_results_path(args):
 
 def register_agent_packet(args, agent_id, packet_path, packet_method="dsdm"):
     """把单个 agent 的 packet 复制到 packet_hub 并返回 manifest 行。"""
+    class_split = get_agent_class_split(args)
+    model_split = get_agent_model_split(args)
     hub_dir = get_method_packet_hub_dir(args, packet_method)
     hub_dir.mkdir(parents=True, exist_ok=True)
     dst = hub_dir / f"agent_{int(agent_id)}_{packet_method}_packet.pt"
     shutil.copyfile(packet_path, dst)
     return {
         "sender_agent": int(agent_id),
-        "sender_model": AGENT_MODEL_SPLIT[int(agent_id)],
-        "classes": ",".join(str(c) for c in AGENT_CLASS_SPLIT[int(agent_id)]),
+        "sender_model": model_split[int(agent_id)],
+        "classes": ",".join(str(c) for c in class_split[int(agent_id)]),
         "method": packet_method.upper(),
         "ipc": int(args.ipc),
         "packet_path": str(dst),

@@ -8,6 +8,7 @@ from pathlib import Path
 import torch
 
 from config_adapter import build_dsdm_args_from_config, load_config
+from agent_data import get_agent_class_split, get_num_classes
 from packet_consumer import consume_packet_for_training
 from social_output_manager import get_manifest_path, get_run_dir, read_packet_manifest
 
@@ -44,16 +45,18 @@ def _metrics_paths(args, packet_method):
 
 def _expected_dsdm_summary(args):
     """返回当前 DSDM 设置下的期望数量。"""
-    classes_per_agent = 2
-    num_agents = 5
-    raw_per_agent = classes_per_agent * int(args.ipc)
-    train_per_agent = raw_per_agent * int(args.factor) ** 2
+    class_split = get_agent_class_split(args)
+    total_classes = sum(len(classes) for classes in class_split.values())
+    num_agents = len(class_split)
+    raw_per_agent = {str(agent_id): len(classes) * int(args.ipc) for agent_id, classes in class_split.items()}
+    train_per_agent = {agent_id: raw * int(args.factor) ** 2 for agent_id, raw in raw_per_agent.items()}
     return {
         "raw_per_agent": raw_per_agent,
         "train_per_agent": train_per_agent,
-        "total_raw_images": num_agents * raw_per_agent,
-        "total_train_images": num_agents * train_per_agent,
+        "total_raw_images": total_classes * int(args.ipc),
+        "total_train_images": total_classes * int(args.ipc) * int(args.factor) ** 2,
         "per_class_train_images": int(args.ipc) * int(args.factor) ** 2,
+        "num_agents": num_agents,
     }
 
 
@@ -66,7 +69,7 @@ def _build_warning(args, packet_method, summary):
     for key in ["total_raw_images", "total_train_images"]:
         if int(summary.get(key, -1)) != int(expected[key]):
             warnings.append(f"{key}={summary.get(key)}，期望 {expected[key]}")
-    for class_id in range(10):
+    for class_id in range(get_num_classes(args)):
         got = int(summary.get("per_class_train_images", {}).get(str(class_id), 0))
         if got != int(expected["per_class_train_images"]):
             warnings.append(f"class {class_id} train images={got}，期望 {expected['per_class_train_images']}")
@@ -112,8 +115,8 @@ def validate_packets(args, packet_method):
         "packet_method": packet_method,
         "total_raw_images": int(total_raw),
         "total_train_images": int(total_train),
-        "per_class_raw_images": {str(k): int(per_class_raw.get(k, 0)) for k in range(10)},
-        "per_class_train_images": {str(k): int(per_class_train.get(k, 0)) for k in range(10)},
+        "per_class_raw_images": {str(k): int(per_class_raw.get(k, 0)) for k in range(get_num_classes(args))},
+        "per_class_train_images": {str(k): int(per_class_train.get(k, 0)) for k in range(get_num_classes(args))},
     }
     warnings = _build_warning(args, packet_method, summary)
     result = {"summary": summary, "packets": packet_rows, "warnings": warnings}

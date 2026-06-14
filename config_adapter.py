@@ -202,6 +202,7 @@ def _apply_dataset_rules(args):
         args.mixup = "vanilla"
         args.mixup_net = "vanilla"
         args.dsa = False
+    args.num_classes = args.nclass
 
 
 def _apply_model_rules(args):

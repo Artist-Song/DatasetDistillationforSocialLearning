@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from agent_data import AGENT_CLASS_SPLIT, get_cifar10_test_dataset
+from agent_data import get_agent_class_split, get_num_classes, get_test_dataset
 
 
 def _subset_by_classes(dataset, class_ids):
@@ -29,9 +29,9 @@ def compute_accuracy(model, loader, device):
 
 def evaluate_receiver_model(args, model, receiver_agent, device):
     """评估 receiver 的 global/expert/new 三类准确率。"""
-    dataset = get_cifar10_test_dataset(args)
-    expert_classes = AGENT_CLASS_SPLIT[int(receiver_agent)]
-    new_classes = [c for c in range(10) if c not in expert_classes]
+    dataset = get_test_dataset(args)
+    expert_classes = get_agent_class_split(args)[int(receiver_agent)]
+    new_classes = [c for c in range(get_num_classes(args)) if c not in expert_classes]
     global_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     expert_loader = DataLoader(_subset_by_classes(dataset, expert_classes), batch_size=args.batch_size, shuffle=False)
     new_loader = DataLoader(_subset_by_classes(dataset, new_classes), batch_size=args.batch_size, shuffle=False)

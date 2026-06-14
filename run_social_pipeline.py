@@ -4,11 +4,12 @@ import sys
 from pathlib import Path
 
 from agent_data import (
-    AGENT_CLASS_SPLIT,
-    AGENT_MODEL_SPLIT,
     build_agent_args,
     get_agent_dir,
+    get_agent_class_split,
     get_agent_ids,
+    get_agent_model_split,
+    get_num_classes,
     get_receiver_ids,
 )
 from agent_trainer import prepare_agent_pretrained_dir, train_agent_experts
@@ -71,27 +72,33 @@ def parse_cli():
 
 def _print_dry_run(args, cli):
     """打印第二阶段 dry-run 执行计划。"""
+    class_split = get_agent_class_split(args)
+    model_split = get_agent_model_split(args)
     print("social pipeline dry-run")
     print(args_to_pretty_json(args))
     print(f"stage: {cli.stage}")
     print(f"packet_method: {cli.packet_method}")
     print(f"init_mode: {cli.init_mode}")
-    print(f"agents: {get_agent_ids(cli.only_agent)}")
-    print(f"receivers: {get_receiver_ids(cli.only_receiver)}")
-    for agent_id, classes in AGENT_CLASS_SPLIT.items():
-        print(f"agent {agent_id}: model={AGENT_MODEL_SPLIT[agent_id]} classes={classes}")
+    print(f"dataset: {args.dataset}")
+    print(f"num_classes: {args.num_classes}")
+    print(f"num_agents: {len(class_split)}")
+    print(f"agents: {get_agent_ids(args, cli.only_agent)}")
+    print(f"receivers: {get_receiver_ids(args, cli.only_receiver)}")
+    for agent_id, classes in class_split.items():
+        print(f"agent {agent_id}: model={model_split[agent_id]} classes={classes}")
     print(f"run_dir: {Path(args.output_root) / args.run_name}")
 
 
 def _stage_train_experts(cfg, config_path, base_args, cli):
     """训练每个 agent 的 expert guide model pool。"""
-    agent_ids = get_agent_ids(cli.only_agent)
+    class_split = get_agent_class_split(base_args)
+    agent_ids = get_agent_ids(base_args, cli.only_agent)
     _stage_banner("train_experts", f"agents={agent_ids}")
     progress = ProgressTimer(len(agent_ids), name="train_experts")
     for index, agent_id in enumerate(agent_ids, start=1):
         agent_args = build_agent_args(cfg, config_path, agent_id)
         os.environ["CUDA_VISIBLE_DEVICES"] = str(agent_args.gpu_id)
-        print(f"[train_experts] agent={agent_id} classes={AGENT_CLASS_SPLIT[agent_id]}")
+        print(f"[train_experts] agent={agent_id} classes={class_split[agent_id]}")
         train_agent_experts(agent_args, agent_id, resume=cli.resume, overwrite=cli.overwrite)
         progress.update(index, extra=f"agent={agent_id}")
     _stage_done("train_experts")
@@ -101,7 +108,7 @@ def _stage_distill_packets(cfg, config_path, base_args, cli):
     """为每个 agent 运行 DSDM 蒸馏并生成自己的 packet。"""
     from DSDM import run_dsdm
 
-    agent_ids = get_agent_ids(cli.only_agent)
+    agent_ids = get_agent_ids(base_args, cli.only_agent)
     _stage_banner("distill_packets", f"agents={agent_ids}")
     progress = ProgressTimer(len(agent_ids), name="distill_packets")
     for index, agent_id in enumerate(agent_ids, start=1):
@@ -129,7 +136,7 @@ def _load_agent_guide_models(args, agent_id):
         path = ckpt_dir / f"guide_model_{model_idx}.pt"
         if not path.exists():
             continue
-        model = define_model(args, 10).to(device)
+        model = define_model(args, int(args.num_classes)).to(device)
         model.load_state_dict(torch.load(path, map_location=device))
         models.append(model)
     return models
@@ -142,7 +149,7 @@ def _stage_build_selection_packets(cfg, config_path, base_args, cli):
     if cli.packet_method not in {"heuristic", "importance"}:
         print("[build_selection_packets] dsdm packet 由 distill_packets 生成，此阶段跳过。")
         return
-    agent_ids = get_agent_ids(cli.only_agent)
+    agent_ids = get_agent_ids(base_args, cli.only_agent)
     _stage_banner("build_selection_packets", f"method={cli.packet_method} agents={agent_ids}")
     progress = ProgressTimer(len(agent_ids), name=f"build_{cli.packet_method}")
     for index, agent_id in enumerate(agent_ids, start=1):
@@ -162,7 +169,7 @@ def _stage_build_selection_packets(cfg, config_path, base_args, cli):
 
 def _stage_build_communication(base_args, cli):
     """把 agent packet 注册到 packet_hub 并写 manifest。"""
-    agent_ids = get_agent_ids(cli.only_agent)
+    agent_ids = get_agent_ids(base_args, cli.only_agent)
     _stage_banner("build_communication", f"method={cli.packet_method} agents={agent_ids}")
     rows = []
     if cli.only_agent is not None:
@@ -189,7 +196,7 @@ def _stage_train_receivers(base_args, cli):
     """读取 packet_hub 并训练每个 receiver。"""
     cfg = load_config(cli.config)
     rows = read_packet_manifest(base_args, cli.packet_method)
-    receiver_ids = get_receiver_ids(cli.only_receiver)
+    receiver_ids = get_receiver_ids(base_args, cli.only_receiver)
     _stage_banner("train_receivers", f"receivers={receiver_ids}")
     progress = ProgressTimer(len(receiver_ids), name="train_receivers")
     for index, receiver_id in enumerate(receiver_ids, start=1):
@@ -215,7 +222,8 @@ def main():
     cli = parse_cli()
     cfg = load_config(cli.config)
     base_args = build_dsdm_args_from_config(cfg, config_path=cli.config)
-    base_args.num_classes = 10
+    base_args.num_classes = get_num_classes(base_args)
+    base_args.nclass = base_args.num_classes
     prepare_social_output_dirs(base_args)
     save_social_config(cli.config, base_args)
 
