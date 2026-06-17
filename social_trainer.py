@@ -162,7 +162,11 @@ class SocialTrainer:
         torch.save(model_new.state_dict(), receiver_dir / "checkpoints" / "after_social.pt")
         after = evaluate_receiver_model(self.args, model_new, self.receiver_agent, self.device)
         external_raw = sum(p["raw_images"] for p in packets if p["sender_agent"] != self.receiver_agent)
-        external_logit_bytes = sum(p["sender_logit_bytes"] for p in packets if p["sender_agent"] != self.receiver_agent)
+        external_logit_bytes = (
+            sum(p["sender_logit_bytes"] for p in packets if p["sender_agent"] != self.receiver_agent)
+            if use_logits
+            else 0
+        )
         base_method = getattr(self.args, "packet_method", "dsdm").upper()
         method = f"{base_method}_LOGIT" if use_logits else base_method
         return {

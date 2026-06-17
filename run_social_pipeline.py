@@ -83,9 +83,11 @@ def _print_dry_run(args, cli):
     """打印第二阶段 dry-run 执行计划。"""
     class_split = get_agent_class_split(args)
     model_split = get_agent_model_split(args)
+    cfg = load_config(cli.config)
     print("social pipeline dry-run")
     print(args_to_pretty_json(args))
     print(f"stage: {cli.stage}")
+    print(f"stages: {_build_stages(cfg, cli)}")
     print(f"packet_method: {cli.packet_method}")
     print(f"init_mode: {cli.init_mode}")
     print(f"dataset: {args.dataset}")
@@ -100,6 +102,25 @@ def _print_dry_run(args, cli):
             packet_path = get_agent_dir(args, agent_id) / "packets" / f"{cli.packet_method}_packet.pt"
             print(f"attach_logits packet: agent={agent_id} path={packet_path}")
     print(f"run_dir: {Path(args.output_root) / args.run_name}")
+
+
+def _build_stages(cfg, cli):
+    """根据命令行和 logits 配置构建实际阶段列表。"""
+    logits_enabled = bool(cfg.get("logits", {}).get("enabled", False))
+    stages = []
+    if cli.stage in {"train_experts", "all"}:
+        stages.append("train_experts")
+    if cli.stage in {"distill_packets", "all"}:
+        stages.append("distill_packets")
+    if cli.stage in {"build_selection_packets"}:
+        stages.append("build_selection_packets")
+    if cli.stage in {"attach_logits"} or (cli.stage == "all" and logits_enabled):
+        stages.append("attach_logits")
+    if cli.stage in {"build_communication", "all"}:
+        stages.append("build_communication")
+    if cli.stage in {"train_receivers", "all"}:
+        stages.append("train_receivers")
+    return stages
 
 
 def _stage_train_experts(cfg, config_path, base_args, cli):
@@ -260,19 +281,7 @@ def main():
         _print_dry_run(base_args, cli)
         return
 
-    stages = []
-    if cli.stage in {"train_experts", "all"}:
-        stages.append("train_experts")
-    if cli.stage in {"distill_packets", "all"}:
-        stages.append("distill_packets")
-    if cli.stage in {"build_selection_packets"}:
-        stages.append("build_selection_packets")
-    if cli.stage in {"attach_logits"}:
-        stages.append("attach_logits")
-    if cli.stage in {"build_communication", "all"}:
-        stages.append("build_communication")
-    if cli.stage in {"train_receivers", "all"}:
-        stages.append("train_receivers")
+    stages = _build_stages(cfg, cli)
 
     _stage_banner("social_pipeline", f"stages={stages}")
     pipeline_progress = ProgressTimer(len(stages), name="social_pipeline")
