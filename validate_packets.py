@@ -84,6 +84,8 @@ def validate_packets(args, packet_method):
     total_train = 0
     per_class_raw = Counter()
     per_class_train = Counter()
+    total_sender_logit_bytes = 0
+    warnings = []
 
     for row in rows:
         packet_path = row["packet_path"]
@@ -97,6 +99,19 @@ def validate_packets(args, packet_method):
         per_class_train.update({int(k): v for k, v in train_dist.items()})
         total_raw += int(consumed["raw_images"])
         total_train += int(consumed["num_images"])
+        has_sender_logits = bool(packet.get("has_sender_logits", False))
+        sender_logit_shape = ""
+        sender_logit_dim = int(packet.get("sender_logit_dim", 0))
+        sender_logit_num_images = int(packet.get("sender_logit_num_images", 0))
+        sender_logit_dtype = packet.get("sender_logit_dtype", "")
+        sender_logit_bytes = int(consumed.get("sender_logit_bytes", 0))
+        if has_sender_logits:
+            sender_logit_shape = "x".join(str(x) for x in packet["sender_logits"].shape)
+            total_sender_logit_bytes += sender_logit_bytes
+            if sender_logit_num_images != int(consumed["num_images"]):
+                warnings.append(f"agent {row['sender_agent']} sender_logit_num_images 与训练图片数不一致")
+            if sender_logit_dim != len(packet.get("class_ids", [])):
+                warnings.append(f"agent {row['sender_agent']} sender_logit_dim 与 class_ids 数量不一致")
         packet_rows.append(
             {
                 "sender_agent": row["sender_agent"],
@@ -108,6 +123,12 @@ def validate_packets(args, packet_method):
                 "raw_label_distribution": json.dumps(raw_dist, ensure_ascii=False),
                 "train_label_distribution": json.dumps(train_dist, ensure_ascii=False),
                 "decoded_for_training": bool(consumed["decoded_for_training"]),
+                "has_sender_logits": has_sender_logits,
+                "sender_logit_shape": sender_logit_shape,
+                "sender_logit_dim": sender_logit_dim,
+                "sender_logit_num_images": sender_logit_num_images,
+                "sender_logit_dtype": sender_logit_dtype,
+                "sender_logit_bytes": sender_logit_bytes,
             }
         )
 
@@ -117,8 +138,9 @@ def validate_packets(args, packet_method):
         "total_train_images": int(total_train),
         "per_class_raw_images": {str(k): int(per_class_raw.get(k, 0)) for k in range(get_num_classes(args))},
         "per_class_train_images": {str(k): int(per_class_train.get(k, 0)) for k in range(get_num_classes(args))},
+        "total_sender_logit_bytes": int(total_sender_logit_bytes),
     }
-    warnings = _build_warning(args, packet_method, summary)
+    warnings.extend(_build_warning(args, packet_method, summary))
     result = {"summary": summary, "packets": packet_rows, "warnings": warnings}
     json_path, csv_path = _metrics_paths(args, packet_method)
     json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +157,12 @@ def validate_packets(args, packet_method):
             "raw_label_distribution",
             "train_label_distribution",
             "decoded_for_training",
+            "has_sender_logits",
+            "sender_logit_shape",
+            "sender_logit_dim",
+            "sender_logit_num_images",
+            "sender_logit_dtype",
+            "sender_logit_bytes",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

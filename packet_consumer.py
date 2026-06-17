@@ -46,6 +46,19 @@ def consume_packet_for_training(args, packet_path):
         decoded_for_training = False
     else:
         raise ValueError(f"不支持的 packet source: {source}")
+    has_sender_logits = bool(packet.get("has_sender_logits", False))
+    sender_logits = None
+    sender_logit_class_ids = None
+    sender_logit_dim = 0
+    sender_logit_bytes = 0
+    if has_sender_logits:
+        sender_logits = packet["sender_logits"].cpu()
+        if sender_logits.shape[0] != images.shape[0]:
+            raise ValueError("sender_logits 数量与训练 images 数量不一致")
+        class_ids = packet["sender_logit_class_ids"].long().cpu()
+        sender_logit_class_ids = class_ids.view(1, -1).repeat(images.shape[0], 1)
+        sender_logit_dim = int(sender_logits.shape[1])
+        sender_logit_bytes = int(sender_logits.numel() * sender_logits.element_size())
     return {
         "images": images.float(),
         "labels": labels.long(),
@@ -55,16 +68,40 @@ def consume_packet_for_training(args, packet_path):
         "source": source,
         "class_ids": packet.get("class_ids", []),
         "meta": packet.get("meta", {}),
+        "has_sender_logits": has_sender_logits,
+        "sender_logits": sender_logits,
+        "sender_logit_class_ids": sender_logit_class_ids,
+        "sender_logit_dim": sender_logit_dim,
+        "sender_logit_bytes": sender_logit_bytes,
     }
 
 
-def consume_manifest_packets(args, manifest_rows):
-    """读取 manifest 中的全部 packet 并拼接成训练张量。"""
+def consume_manifest_packets(args, manifest_rows, require_logits=False):
+    """读取 manifest 中的全部 packet 并拼接成训练张量和可选 logits。"""
     packets = []
+    sender_agent_chunks = []
     for row in manifest_rows:
         consumed = consume_packet_for_training(args, row["packet_path"])
         consumed["sender_agent"] = int(row["sender_agent"])
         packets.append(consumed)
+        sender_agent_chunks.append(torch.full((consumed["images"].shape[0],), int(row["sender_agent"]), dtype=torch.long))
     images = torch.cat([p["images"] for p in packets])
     labels = torch.cat([p["labels"] for p in packets])
-    return images, labels, packets
+    sender_agents = torch.cat(sender_agent_chunks)
+    has_any_logits = any(p["has_sender_logits"] for p in packets)
+    has_all_logits = all(p["has_sender_logits"] for p in packets)
+    sender_logits = None
+    sender_logit_class_ids = None
+    if require_logits:
+        if not has_all_logits:
+            raise ValueError("部分 packet 缺少 sender_logits，请为全部 packet 运行 attach_logits")
+        sender_logits = torch.cat([p["sender_logits"] for p in packets])
+        sender_logit_class_ids = torch.cat([p["sender_logit_class_ids"] for p in packets])
+    return {
+        "images": images,
+        "labels": labels,
+        "sender_logits": sender_logits,
+        "sender_logit_class_ids": sender_logit_class_ids,
+        "sender_agents": sender_agents,
+        "packets": packets,
+    }

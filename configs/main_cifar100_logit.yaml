@@ -2,7 +2,7 @@ project:
   name: social_packet_learning
   stage: dsdm_reproduce
   output_root: ./outputs
-  run_name: cifar100_4agent_25cls_ipc10
+  run_name: cifar100_4agent_25cls_ipc10_logit
 
 dataset:
   name: cifar100
@@ -78,7 +78,7 @@ social_learning:
     lambda_fr: 0.05
 
 logits:
-  enabled: false
+  enabled: true
   lambda_kd: 0.5
   temperature: 2.0
 

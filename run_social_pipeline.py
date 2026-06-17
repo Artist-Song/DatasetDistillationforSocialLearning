@@ -15,6 +15,7 @@ from agent_data import (
 from agent_trainer import prepare_agent_pretrained_dir, train_agent_experts
 from config_adapter import args_to_pretty_json, build_dsdm_args_from_config, load_config
 from output_manager import save_packet
+from packet_logits import attach_sender_logits_to_packet
 from progress_timer import ProgressTimer
 from selection_methods import build_heuristic_packet, build_importance_packet
 from social_output_manager import (
@@ -57,7 +58,15 @@ def parse_cli():
     parser.add_argument(
         "--stage",
         default="all",
-        choices=["train_experts", "distill_packets", "build_selection_packets", "build_communication", "train_receivers", "all"],
+        choices=[
+            "train_experts",
+            "distill_packets",
+            "build_selection_packets",
+            "attach_logits",
+            "build_communication",
+            "train_receivers",
+            "all",
+        ],
         help="运行阶段",
     )
     parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance"], help="packet 方法")
@@ -86,6 +95,10 @@ def _print_dry_run(args, cli):
     print(f"receivers: {get_receiver_ids(args, cli.only_receiver)}")
     for agent_id, classes in class_split.items():
         print(f"agent {agent_id}: model={model_split[agent_id]} classes={classes}")
+    if cli.stage == "attach_logits":
+        for agent_id in get_agent_ids(args, cli.only_agent):
+            packet_path = get_agent_dir(args, agent_id) / "packets" / f"{cli.packet_method}_packet.pt"
+            print(f"attach_logits packet: agent={agent_id} path={packet_path}")
     print(f"run_dir: {Path(args.output_root) / args.run_name}")
 
 
@@ -167,6 +180,18 @@ def _stage_build_selection_packets(cfg, config_path, base_args, cli):
     _stage_done("build_selection_packets")
 
 
+def _stage_attach_logits(cfg, config_path, base_args, cli):
+    """为指定 packet method 的 agent packets 附加 sender logits。"""
+    agent_ids = get_agent_ids(base_args, cli.only_agent)
+    _stage_banner("attach_logits", f"method={cli.packet_method} agents={agent_ids}")
+    progress = ProgressTimer(len(agent_ids), name="attach_logits")
+    for index, agent_id in enumerate(agent_ids, start=1):
+        agent_args = build_agent_args(cfg, config_path, agent_id)
+        attach_sender_logits_to_packet(agent_args, agent_id, cli.packet_method)
+        progress.update(index, extra=f"agent={agent_id}")
+    _stage_done("attach_logits")
+
+
 def _stage_build_communication(base_args, cli):
     """把 agent packet 注册到 packet_hub 并写 manifest。"""
     agent_ids = get_agent_ids(base_args, cli.only_agent)
@@ -205,6 +230,10 @@ def _stage_train_receivers(base_args, cli):
         receiver_args.receiver_epochs = receiver_cfg.get("epochs", receiver_args.epochs)
         receiver_args.receiver_lr = receiver_cfg.get("lr", receiver_args.lr)
         receiver_args.lambda_fr = receiver_cfg.get("lambda_fr", 0.05)
+        logits_cfg = cfg.get("logits", {})
+        receiver_args.use_logits = bool(logits_cfg.get("enabled", False))
+        receiver_args.lambda_kd = float(logits_cfg.get("lambda_kd", 0.5)) if receiver_args.use_logits else 0.0
+        receiver_args.kd_temperature = float(logits_cfg.get("temperature", 2.0))
         receiver_args.packet_method = cli.packet_method
         receiver_args.init_mode = cli.init_mode
         receiver_args.use_fr = cli.init_mode == "expert"
@@ -238,6 +267,8 @@ def main():
         stages.append("distill_packets")
     if cli.stage in {"build_selection_packets"}:
         stages.append("build_selection_packets")
+    if cli.stage in {"attach_logits"}:
+        stages.append("attach_logits")
     if cli.stage in {"build_communication", "all"}:
         stages.append("build_communication")
     if cli.stage in {"train_receivers", "all"}:
@@ -259,6 +290,10 @@ def main():
         _stage_build_selection_packets(cfg, cli.config, base_args, cli)
         finished += 1
         pipeline_progress.update(finished, extra="build_selection_packets")
+    if "attach_logits" in stages:
+        _stage_attach_logits(cfg, cli.config, base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="attach_logits")
     if "build_communication" in stages:
         _stage_build_communication(base_args, cli)
         finished += 1

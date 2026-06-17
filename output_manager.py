@@ -107,14 +107,14 @@ def save_best_synthetic(args, synset, best_acc, iteration):
 
 
 def _validate_packet_payload(payload):
-    """检查 packet 中是否包含禁止字段。"""
+    """检查 packet 中是否包含不允许通信的模型级状态。"""
     banned = {
         "model_state_dict",
-        "teacher_logits",
-        "teacher_probs",
-        "soft_targets",
         "gradients",
         "optimizer_state",
+        "features",
+        "feature_maps",
+        "activations",
     }
     overlap = banned.intersection(payload.keys())
     if overlap:

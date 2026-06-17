@@ -18,8 +18,12 @@ SOCIAL_RESULT_FIELDS = [
     "init_mode",
     "use_fr",
     "lambda_fr",
+    "use_logits",
+    "lambda_kd",
+    "kd_temperature",
     "ipc",
     "external_comm_images",
+    "external_comm_logit_bytes",
     "acc_global_before",
     "acc_expert_before",
     "acc_global_after",
@@ -28,6 +32,7 @@ SOCIAL_RESULT_FIELDS = [
     "forgetting",
     "loss_cls",
     "loss_fr",
+    "loss_kd",
     "time",
 ]
 
@@ -187,4 +192,9 @@ def _migrate_social_result_row(row, old_fields):
     clean["init_mode"] = row.get("init_mode", "expert")
     clean["use_fr"] = row.get("use_fr", "true")
     clean["lambda_fr"] = row.get("lambda_fr", "0.05")
+    clean["use_logits"] = row.get("use_logits", "false")
+    clean["lambda_kd"] = row.get("lambda_kd", "0.0")
+    clean["kd_temperature"] = row.get("kd_temperature", "2.0")
+    clean["external_comm_logit_bytes"] = row.get("external_comm_logit_bytes", "0")
+    clean["loss_kd"] = row.get("loss_kd", "0.0")
     return clean
