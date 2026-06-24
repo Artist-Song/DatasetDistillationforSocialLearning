@@ -2,677 +2,385 @@
 
 ## 项目名称
 
-`social-packet-learning`
+```text
+DatasetDistillationforSocialLearning
+```
 
-## 研究目标
+## 课题名称
 
-本项目研究基于 packet 的社会化学习。
-
-长期目标是让不同 agent 之间通过紧凑数据包进行知识传递，而不是传输模型参数、梯度、logits、概率或 soft target。
-
-当前项目以 DSDM 源码为基础。第一阶段已经完成 DSDM 的配置入口、统一输出、packet 保存和 packet 评估。第二阶段在此基础上实现完整的异构 agent 社会化学习流程。
-
-## 当前阶段
-
-当前阶段为第二阶段：
+中文暂定名：
 
 ```text
-异构 agent 社会化 packet 学习
+面向异构社会化学习的高知识密度蒸馏通信包构建方法
 ```
 
-核心链路：
+英文暂定名：
 
 ```text
-专家类学习
-→ DSDM 蒸馏
-→ packet_hub 通信注册
-→ receiver 二轮学习
-→ 社会化学习结果评估
+Distilled Knowledge Packets for Communication-Efficient Heterogeneous Socialized Learning
 ```
 
-## 第二阶段目标
+## 研究背景
 
-第二阶段实现以下功能：
+社会化学习关注多个智能体之间通过交互实现能力增长。每个 agent 初始只掌握一部分 expert classes，在社会化学习后需要获得其他 agent 的互补知识，同时尽可能保持自身原有 expert knowledge。
 
-1. 构建 CIFAR-10 上的 5-agent 场景。
-2. 每个 agent 拥有 2 个 expert classes。
-3. agent 使用异构模型。
-4. 每个 agent 只用自己的 expert classes 训练 expert model pool。
-5. 每个 agent 用自己的模型和数据生成 DSDM packet。
-6. 所有 packet 注册到 `packet_hub/`。
-7. 每个 receiver agent 读取全部 packet。
-8. receiver 通过 `packet_consumer.py` 获得可直接训练的数据。
-9. receiver 从自己的 expert model 出发二轮学习。
-10. receiver loss 使用：
-    ```text
-    L = L_cls + 0.05 * L_FR
-    ```
-11. 评估每个 receiver 的 global accuracy、expert accuracy、new-class accuracy 和 forgetting。
-12. 保存 `packet_manifest.csv` 和 `social_results.csv`。
-
-第二阶段不实现：
-
-1. 多轮通信。
-2. sequential packet learning。
-3. 动态 packet 选择。
-4. agent 间参数聚合。
-5. logits / soft target / gradient 传输。
-6. t-SNE 可视化。
-7. 消融实验。
-8. 大规模数据集。
-
-## 数据集设定
-
-数据集：
+当前项目关注更具体的问题：
 
 ```text
-CIFAR-10
+在模型异构和通信受限同时存在的社会化学习场景中，agent 之间应该传递什么形式的知识？
 ```
 
-类别数：
+传统参数、梯度和中间特征通信依赖具体网络结构。当 sender 和 receiver 采用不同模型结构时，模型空间知识难以直接共享。相比之下，输入空间图像样本天然可以被不同结构模型读取和学习，因此更适合作为异构 agent 之间的共同通信对象。
+
+但是，直接传输真实样本在低通信预算下存在信息覆盖不足的问题。为此，本项目将数据集蒸馏引入社会化学习，将每个 agent 的局部专家知识压缩为少量 synthetic images，形成 distilled knowledge packet，从而兼顾异构兼容性和高知识密度通信。
+
+## 核心研究问题
+
+本项目围绕三个核心问题展开：
 
 ```text
-10
+Q1：如何构建一种异构模型均可学习的通信对象？
+Q2：如何在低通信预算下提高单位通信量中的知识密度？
+Q3：如何让 receiver 在吸收外部知识的同时保持自身 expert knowledge？
 ```
 
-所有阶段都保留 CIFAR-10 全局标签。
-
-不允许把 agent 内部标签重映射成局部标签。
-
-例如 agent 2 负责：
+对应思路：
 
 ```text
-[4, 5]
+A1：使用输入空间 image packet，而不是参数、梯度或特征。
+A2：使用数据集蒸馏生成 compact synthetic packet。
+A3：使用 expert initialization、FR loss 和可选 sender logits 缓解遗忘并增强知识吸收。
 ```
 
-其训练标签仍然是：
+## 方法概述
+
+当前方法由四部分组成。
+
+### 1. Local Expert Training
+
+每个 agent 只使用自己的 expert classes 训练本地专家模型。
+
+CIFAR-100 主设定：
 
 ```text
-4, 5
+agent 0: classes 0-24
+agent 1: classes 25-49
+agent 2: classes 50-74
+agent 3: classes 75-99
 ```
 
-不是：
+每个模型输出维度仍然是 100。
+
+### 2. Knowledge Packet Construction
+
+当前支持四种 packet：
 
 ```text
-0, 1
+DSDM：蒸馏 synthetic image packet
+Heuristic：随机真实样本 subset packet
+Importance：低置信度真实样本 subset packet
+Full Real：全部真实样本 packet，用作 upper-bound baseline
 ```
 
-## agent 划分
+DSDM 是目标方法。Full Real 不是低通信方法，只用于诊断上限。
 
-agent 数量：
+### 3. Optional Sender Logits Attachment
+
+在 image packet 基础上，可以附加 sender expert-class logits。
+
+logits 只保留 sender 自己 expert classes 上的输出，不保留 full 100-class logits。
+
+该模块用于补充 soft decision information，增强 receiver 对外部类别的吸收能力。
+
+### 4. Receiver Social Training
+
+receiver 读取所有 packet，包括 self packet 和 external packets。
+
+训练目标：
 
 ```text
-5
+L = L_cls + lambda_fr * L_FR + lambda_kd * L_KD
 ```
 
-每个 agent 负责 2 个 expert classes：
-
-```python
-agent_class_split = {
-    0: [0, 1],
-    1: [2, 3],
-    2: [4, 5],
-    3: [6, 7],
-    4: [8, 9],
-}
-```
-
-## agent 异构模型设定
-
-agent 模型来自 DSDM 模型库。
-
-第一版使用：
+其中：
 
 ```text
-convnet
-resnet
-resnet_ap
+L_cls：hard-label classification loss
+L_FR：保持 receiver expert classes 上旧模型响应
+L_KD：学习 external sender expert-class logits
 ```
 
-模型分配：
+expert initialization 下启用 FR；scratch initialization 下不启用 FR。
+
+## 当前主要实验设定
+
+### 数据集
+
+```text
+CIFAR-100
+```
+
+### 划分方式
+
+```text
+4 agents，每个 agent 25 classes，class-disjoint split
+```
+
+### 模型设置
+
+主实验为异构设置：
 
 ```python
 agent_model_split = {
     0: "convnet",
     1: "convnet",
     2: "resnet",
-    3: "resnet",
-    4: "resnet_ap",
+    3: "resnet_ap",
 }
 ```
 
-如果 DSDM 源码中模型字符串不同，以源码实际支持的 `net_type` 字符串为准。
+用户已经完成同构实验，用于验证异构是否影响 DSDM packet transferability。
 
-## 模型输出维度
+### 通信预算
 
-所有 agent 的模型输出维度固定为：
-
-```text
-10
-```
-
-即使某个 agent 只训练两个 expert classes，也不能把分类头改成 2 维。
-
-原因：
+当前已有主要实验：
 
 ```text
-receiver 二轮学习时需要学习全局 CIFAR-10 类别。
+IPC = 50
 ```
 
-## active_class_ids 与 num_classes
-
-必须区分：
+CIFAR-100 IPC=50 时：
 
 ```text
-num_classes = 10
-active_class_ids = 当前 agent 的 expert classes
+每个 sender raw packet images = 25 × 50 = 1250
+每个 receiver external raw images = 3 × 1250 = 3750
 ```
 
-例如 agent 3：
+## 当前已有结果总结
+
+当前 CIFAR-100 IPC=50 实验显示：
 
 ```text
-num_classes = 10
-active_class_ids = [6, 7]
+1. DSDM_LOGIT 相比 DSDM image-only 在平均 global accuracy 和 new accuracy 上有提升。
+2. HEURISTIC_LOGIT 在 IPC=50 下平均性能高于 DSDM_LOGIT。
+3. IMPORTANCE_LOGIT 表现明显较差。
+4. DSDM_LOGIT 在 ResNet / ResNet_AP receiver 上的 new-class absorption 有一定优势。
+5. agent 2 在 DSDM_LOGIT 下出现严重 expert forgetting。
+6. 用户已经完成 all-ConvNet 同构实验。
 ```
 
-DSDM 中凡是遍历当前要蒸馏的类别，应使用：
-
-```python
-args.active_class_ids
-```
-
-模型构造和分类头输出维度仍使用：
-
-```python
-args.num_classes
-```
-
-## 第一阶段：专家类学习
-
-每个 agent 只用自己的 expert classes 训练本地 expert model pool。
-
-例如：
+当前较稳妥的阶段性结论是：
 
 ```text
-agent 0:
-  model = convnet
-  train classes = [0, 1]
-  output dim = 10
-
-agent 2:
-  model = resnet
-  train classes = [4, 5]
-  output dim = 10
+输入空间 packet 可以跨异构模型使用，sender logits 能在平均意义上增强外部知识吸收；
+但 IPC=50 下真实样本随机子集已经很强，DSDM 的高知识密度优势需要在更低 IPC 下继续验证；
+同时，agent 2 的 forgetting 表明 receiver loss 和训练策略仍需调整。
 ```
 
-每个 agent 训练：
+当前不能过度声称：
 
 ```text
-pretrained_model_number 个 guide models
+DSDM 在 IPC=50 下全面优于核心集方法。
 ```
 
-默认沿用 DSDM：
+## 当前最优先验证实验
+
+用户当前只需要继续完成两个实验：
 
 ```text
-pretrained_model_number = 10
+1. Full Real Social Transfer
+2. Centralized Full Data Upper Bound
 ```
 
+其他实验，包括 factor ablation、agent 2 loss sweep、低 IPC 曲线，暂时放后。
 
-其中最后一个 guide model 作为该 agent 的：
+---
 
-expert_model.pt
+## Experiment 1：Full Real Social Transfer
 
-如果：
-
-pretrained_model_number = 10
-
-则：
-
-expert_model.pt = guide_model_9.pt
-
-第一版不做 best model 选择，直接使用最后一个 guide model，原因是最后一个模型大概率训练最充分、效果最好。
-
-
-## 第二阶段：DSDM packet 蒸馏
-
-每个 agent 用自己的 expert model pool 和自己的 expert classes 生成 DSDM packet。
-
-例如：
+目的：
 
 ```text
-agent 0: convnet + classes [0,1] → agent_0_dsdm_packet.pt
-agent 2: resnet + classes [4,5] → agent_2_dsdm_packet.pt
-agent 4: resnet_ap + classes [8,9] → agent_4_dsdm_packet.pt
+验证社会化训练流程在通信充分条件下的上限。
 ```
 
-每个 agent 的 DSDM packet 只包含自己的两个 expert classes。
-
-packet 标签保留全局 CIFAR-10 标签。
-
-## DSDM factor 设定
-
-DSDM 第一版使用：
+设计：
 
 ```text
-factor = 2
+每个 sender 传输自己全部真实训练数据。
+每个 sender：25 classes × 500 images = 12500 images。
+每个 receiver external data：3 × 12500 = 37500 images。
+receiver 从自身 expert model 初始化。
+训练流程保持与 social training 一致。
 ```
 
-`factor=2` 表示 DSDM 内部将 raw synthetic images decode 成 `2 * 2 = 4` 倍有效训练图。
-
-重要规则：
+需要输出：
 
 ```text
-factor 不计入通信量
-```
-
-通信量只按 raw synthetic images 统计。
-
-## packet 格式
-
-DSDM packet 推荐格式：
-
-```python
-{
-    "images": images,
-    "labels": labels,
-    "class_ids": class_ids,
-    "source": "dsdm",
-    "dataset": "cifar10",
-    "ipc": ipc,
-    "meta": {
-        "run_name": run_name,
-        "method": "DSDM",
-        "sender_agent": agent_id,
-        "sender_model": model_name,
-        "factor": factor,
-        "decode_type": decode_type
-    }
-}
-```
-
-packet 中禁止保存：
-
-```text
-model_state_dict
-teacher_logits
-teacher_probs
-soft_targets
-gradients
-optimizer_state
-```
-
-## 第三阶段：packet_hub 通信注册
-
-通信不做真实网络传输，第一版用 `packet_hub/` 表示所有 agent 可见的数据包中心。
-
-路径：
-
-```text
-outputs/{run_name}/packet_hub/
-```
-
-内容：
-
-```text
-agent_0_dsdm_packet.pt
-agent_1_dsdm_packet.pt
-agent_2_dsdm_packet.pt
-agent_3_dsdm_packet.pt
-agent_4_dsdm_packet.pt
-packet_manifest.csv
-```
-
-`packet_manifest.csv` 字段：
-
-```csv
-sender_agent,sender_model,classes,method,ipc,packet_path
-```
-
-receiver 训练时读取 `packet_manifest.csv` 来定位所有 packet。
-
-## 通信量定义
-
-通信量只记录 receiver 从其他 agent 收到的 raw packet image 数量。
-
-公式：
-
-```text
-external_comm_images = (num_agents - 1) * classes_per_agent * ipc
-```
-
-当前设定下：
-
-```text
-external_comm_images = 4 * 2 * ipc = 8 * ipc
-```
-
-如果 `ipc=10`：
-
-```text
-external_comm_images = 80
-```
-
-不记录：
-
-```text
-self packet
-factor
-effective_ipc
-decode 后训练样本数
-```
-
-## packet_consumer
-
-新增或维护：
-
-```text
-packet_consumer.py
-```
-
-职责：
-
-```text
-把 packet 内部存储格式转换为 receiver 可直接训练的数据。
-```
-
-统一接口：
-
-```python
-def consume_packet_for_training(args, packet_path):
-    """读取 packet，并转换为接收端可直接训练的数据。"""
-    ...
-```
-
-处理规则：
-
-```text
-DSDM:
-  执行 DSDM 原始 decode 逻辑
-
-Heuristic:
-  直接返回 images / labels
-
-Importance:
-  直接返回 images / labels
-```
-
-第二阶段主实验只要求 DSDM packet。
-
-## 第四阶段：receiver 二轮学习
-
-每个 agent 都作为一次 receiver。
-
-receiver 使用：
-
-```text
-自己的 self packet
-+
-其他 4 个 agent 的 external packets
-```
-
-训练流程：
-
-```text
-读取 packet_manifest.csv
-↓
-读取全部 5 个 packet
-↓
-每个 packet 经过 packet_consumer.py
-↓
-concat 成 receiver 训练集
-↓
-class-balanced sampler
-↓
-从 expert_model.pt 初始化 receiver model
-↓
-使用 CE + 0.05 FR 训练
-↓
-保存 after_social.pt
-```
-
-## receiver loss
-
-总损失：
-
-```text
-L = L_cls + 0.05 * L_FR
-```
-
-分类损失：
-
-```text
-L_cls = CE(f_new(x_all), y_all)
-```
-
-对全部 packet 样本计算。
-
-专家类保持损失：
-
-```text
-L_FR = MSE(
-  z_old(x_expert)[:, C_expert],
-  z_new(x_expert)[:, C_expert]
-)
-```
-
-其中：
-
-```text
-z_old：receiver 二轮学习前的冻结 expert model
-z_new：正在训练的 receiver model
-C_expert：receiver 自己的 expert classes
-x_expert：batch 中属于 receiver expert classes 的样本
-```
-
-约束规则：
-
-1. FR 使用 MSE。
-2. FR 权重固定 0.05。
-3. FR 只对 receiver 自己 expert 类样本计算。
-4. FR 只约束 expert class logits。
-5. 新类样本不参与 FR。
-6. 不做动态调权。
-7. 不做 FR loss 消融。
-
-## 采样方式
-
-receiver 训练使用：
-
-```text
-class-balanced sampler
-```
-
-第一版不做 sequential packet learning。
-
-所有 packet 合并后 joint training。
-
-## 评估指标
-
-每个 receiver 训练前后评估：
-
-```text
-acc_global_before
-acc_expert_before
-acc_global_after
-acc_expert_after
-acc_new_after
+global accuracy
+expert accuracy
+new accuracy
 forgetting
+external_comm_images
 ```
 
-定义：
+预期解释：
 
 ```text
-acc_global：CIFAR-10 全部 test set accuracy
-acc_expert：receiver 自己 expert classes 的 test set accuracy
-acc_new：非 receiver expert classes 的 test set accuracy
-forgetting = acc_expert_before - acc_expert_after
+如果 FULL_REAL 明显高于 DSDM / Heuristic：
+    当前瓶颈主要是 packet 信息不足。
+
+如果 FULL_REAL 也不高：
+    当前任务设定、模型容量或 receiver training 本身上限较低。
+
+如果 FULL_REAL 下 agent 2 不遗忘：
+    agent 2 遗忘主要与 DSDM packet 或训练分布有关。
+
+如果 FULL_REAL 下 agent 2 仍遗忘：
+    agent 2 问题主要来自 loss / lr / receiver 训练策略。
 ```
 
-`forgetting` 保留 signed value。
+---
 
-## 输出目录
+## Experiment 2：Centralized Full Data Upper Bound
 
-主输出目录：
+目的：
 
 ```text
-outputs/{run_name}/
+确认不同模型在 CIFAR-100 全量数据上的基础上限。
 ```
 
-推荐结构：
+设计：
 
 ```text
-outputs/{run_name}/
-  config/
-    main.yaml
-    resolved_args.json
-
-  agents/
-    agent_0/
-      checkpoints/
-        guide_model_0.pt
-        guide_model_1.pt
-        ...
-        guide_model_9.pt
-        expert_model.pt
-      packets/
-        dsdm_packet.pt
-      synthetic/
-        data_best.pt
-      visuals/
-      metrics/
-
-    agent_1/
-    agent_2/
-    agent_3/
-    agent_4/
-
-  packet_hub/
-    agent_0_dsdm_packet.pt
-    agent_1_dsdm_packet.pt
-    agent_2_dsdm_packet.pt
-    agent_3_dsdm_packet.pt
-    agent_4_dsdm_packet.pt
-    packet_manifest.csv
-
-  social_learning/
-    receiver_agent_0/
-      checkpoints/
-        before_social.pt
-        after_social.pt
-      metrics/
-        social_metrics.json
-      logs/
-        train.log
-
-    receiver_agent_1/
-    receiver_agent_2/
-    receiver_agent_3/
-    receiver_agent_4/
-
-  metrics/
-    packet_results.csv
-    social_results.csv
+ConvNet on full CIFAR-100
+ResNet on full CIFAR-100
+ResNet_AP on full CIFAR-100
 ```
 
-## social_results.csv
+该实验不属于 social learning，只作为 upper bound。
 
-路径：
+需要输出：
 
 ```text
-outputs/{run_name}/metrics/social_results.csv
+full test accuracy
+training epochs
+model type
 ```
 
-字段：
+解释：
 
-```csv
-run_name,receiver_agent,receiver_model,expert_classes,method,ipc,external_comm_images,acc_global_before,acc_expert_before,acc_global_after,acc_expert_after,acc_new_after,forgetting,loss_cls,loss_fr,time
+```text
+如果 centralized full data 上限本身不高，则 social result 不应期待过高。
+如果 centralized full data 很高，则当前 packet / social training 仍有较大改进空间。
 ```
 
-## 主运行脚本
+## 需要新增或确认的工程功能
 
-新增：
+### 1. full_real packet method
+
+新增或确认正式 packet method：
+
+```text
+full_real
+```
+
+功能：
+
+```text
+每个 agent 将自身全部 expert-class 真实训练数据保存为 packet。
+```
+
+涉及文件：
 
 ```text
 run_social_pipeline.py
+output_manager.py
+packet_consumer.py
+selection_methods.py
+validate_packets.py
 ```
 
-支持：
+### 2. centralized full data training script
 
-```bash
-python run_social_pipeline.py --config configs/main.yaml --stage train_experts
-python run_social_pipeline.py --config configs/main.yaml --stage distill_packets
-python run_social_pipeline.py --config configs/main.yaml --stage build_communication
-python run_social_pipeline.py --config configs/main.yaml --stage train_receivers
-python run_social_pipeline.py --config configs/main.yaml --stage all
+新增或确认脚本：
+
+```text
+run_centralized_full.py
 ```
 
-建议支持：
+功能：
 
-```bash
---dry-run
---resume
---overwrite
---only-agent 0
---only-receiver 0
+```text
+在完整 CIFAR-100 训练集上训练指定模型。
 ```
 
-## AutoDL 工作流
+支持参数：
 
-本地 Codex 改完代码后，用户手动执行：
-
-```bash
-git add .
-git commit -m "stage2: add social packet learning pipeline"
-git push
+```text
+--config
+--model convnet/resnet/resnet_ap
+--epochs
+--lr
+--batch-size
 ```
 
-AutoDL 上执行：
+输出：
 
-```bash
-cd /root/autodl-tmp/social-packet-learning
-git pull
-conda activate <环境名>
-python run_social_pipeline.py --config configs/main.yaml --stage all
+```text
+outputs/{run_name}/centralized_full/{model}/metrics.json
+outputs/{run_name}/centralized_full/{model}/checkpoint.pt
+outputs/{run_name}/centralized_full/centralized_results.csv
 ```
 
-如果中断，可以分阶段继续运行。
+## 实验结果汇总格式
 
-## 第二阶段完成标准
+Full Real Social Transfer 保留逐 agent 结果，并额外计算 4-agent 平均值。
 
-以下命令可用：
+### 表 1：逐 agent 结果
 
-```bash
-python run_social_pipeline.py --config configs/main.yaml --dry-run
+| Method | Receiver | Model | Global | Expert | New | Forgetting | External Images |
+|---|---:|---|---:|---:|---:|---:|---:|
+
+### 表 2：平均结果
+
+| Method | Init | Logits | Global Avg | Expert Avg | New Avg | Forgetting Avg | External Images |
+|---|---|---|---:|---:|---:|---:|---:|
+
+Centralized Full Data 只需要 global accuracy：
+
+| Model | Data | Epochs | LR | Batch Size | Global Acc |
+|---|---|---:|---:|---:|---:|
+
+## 阶段性汇报口径
+
+当前阶段可以这样向老师汇报：
+
+```text
+当前 CIFAR-100 IPC=50 实验已经证明 input-space packet 可以跨 ConvNet、ResNet 和 ResNet_AP receiver 使用，sender logits 也能在平均意义上增强 DSDM packet 的外部知识吸收能力。但 IPC=50 下随机真实样本核心集已经具有较强竞争力，说明 DSDM 的高知识密度优势需要在更低通信预算下进一步验证。
+
+同时，agent 2 出现严重 expert forgetting，说明当前 receiver loss 和训练策略还不够稳定。因此，当前优先补充 Full Real Social Transfer 和 Centralized Full Data Upper Bound 两个验证实验，以明确当前性能瓶颈到底来自任务上限、模型上限、packet 信息不足，还是 social training 流程本身。
 ```
 
-```bash
-python run_social_pipeline.py --config configs/main.yaml --stage train_experts --only-agent 0
+## 当前最小任务清单
+
+优先级从高到低：
+
+```text
+1. 实现或确认 FULL_REAL social transfer。
+2. 实现或确认 centralized full CIFAR-100 upper bound。
+3. 更新并上传 AGENTS.md。
+4. 更新并上传 PROJECT_SPEC.md。
+5. 运行 py_compile 和 dry-run。
+6. 提交并 push 到 GitHub。
 ```
 
-```bash
-python run_social_pipeline.py --config configs/main.yaml --stage distill_packets --only-agent 0
+## 当前不建议立即做的事情
+
+```text
+1. 不建议立刻设计复杂 attention fusion。
+2. 不建议立刻引入多轮通信。
+3. 不建议立刻改 DSDM 主算法。
+4. 不建议只根据 IPC=50 结果判断方法失败。
+5. 不建议在 Full Real 和 Centralized 结果出来前大规模调 agent 2 loss。
 ```
-
-```bash
-python run_social_pipeline.py --config configs/main.yaml --stage build_communication
-```
-
-```bash
-python run_social_pipeline.py --config configs/main.yaml --stage train_receivers --only-receiver 0
-```
-
-完整实验命令：
-
-```bash
-python run_social_pipeline.py --config configs/main.yaml --stage all
-```
-
-## 代码风格要求
-
-1. 所有新增说明和注释使用中文。
-2. 每个新增或修改的函数、类都必须有简短中文注释。
-3. 不要写过度复杂的抽象。
-4. 不要大面积重构 DSDM。
-5. 优先保持第一阶段已有功能可用。
-6. 每次修改后先做 dry-run 或 smoke test。
-7. 不要自动 git push。

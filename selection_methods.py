@@ -92,7 +92,7 @@ def build_importance_packet(args, train_set, guide_models):
 
 
 def build_full_real_packet(args, train_set):
-    """保存当前 agent 全部真实样本，构建 Full Real packet。"""
+    """使用 agent 的全部真实训练样本构建 full_real packet。"""
     indices = list(range(len(train_set)))
     images, labels = _stack_samples(train_set, indices)
     class_ids = sorted({int(label) for label in labels.tolist()})
