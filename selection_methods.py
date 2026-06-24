@@ -89,3 +89,11 @@ def build_importance_packet(args, train_set, guide_models):
         selected.extend([candidates[i] for i in order[: args.ipc]])
     images, labels = _stack_samples(train_set, selected)
     return images, labels, class_ids
+
+
+def build_full_real_packet(args, train_set):
+    """保存当前 agent 全部真实样本，构建 Full Real packet。"""
+    indices = list(range(len(train_set)))
+    images, labels = _stack_samples(train_set, indices)
+    class_ids = sorted({int(label) for label in labels.tolist()})
+    return images, labels, class_ids

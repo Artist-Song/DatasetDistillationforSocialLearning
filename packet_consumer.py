@@ -41,7 +41,7 @@ def consume_packet_for_training(args, packet_path):
     if source == "dsdm":
         images, labels = _decode_dsdm_images(args, packet)
         decoded_for_training = bool(images.shape[0] != packet["images"].shape[0])
-    elif source in {"heuristic", "importance"}:
+    elif source in {"heuristic", "importance", "full_real"}:
         images, labels = packet["images"].cpu(), packet["labels"].cpu()
         decoded_for_training = False
     else:

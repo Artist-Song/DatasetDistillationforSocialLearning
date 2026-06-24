@@ -23,7 +23,7 @@ def parse_cli():
     """解析 packet 有效性验证命令行参数。"""
     parser = argparse.ArgumentParser(description="验证 packet 数量、标签分布和 decode 状态")
     parser.add_argument("--config", default="configs/main.yaml", help="主配置文件路径")
-    parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance"], help="packet 方法")
+    parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance", "full_real"], help="packet 方法")
     parser.add_argument("--dry-run", action="store_true", help="只打印计划，不读取 packet")
     return parser.parse_args()
 
@@ -63,6 +63,16 @@ def _expected_dsdm_summary(args):
 def _build_warning(args, packet_method, summary):
     """根据期望数量生成 warning 列表。"""
     warnings = []
+    if packet_method == "full_real":
+        class_split = get_agent_class_split(args)
+        samples_per_class = 500 if args.dataset == "cifar100" else 5000 if args.dataset == "cifar10" else None
+        if samples_per_class is not None:
+            expected_total = sum(len(classes) for classes in class_split.values()) * samples_per_class
+            if int(summary.get("total_raw_images", -1)) != expected_total:
+                warnings.append(f"total_raw_images={summary.get('total_raw_images')}，期望 {expected_total}")
+            external = expected_total - max(len(classes) for classes in class_split.values()) * samples_per_class
+            summary["expected_external_comm_images_per_receiver"] = int(external)
+        return warnings
     if packet_method != "dsdm":
         return warnings
     expected = _expected_dsdm_summary(args)
@@ -99,6 +109,8 @@ def validate_packets(args, packet_method):
         per_class_train.update({int(k): v for k, v in train_dist.items()})
         total_raw += int(consumed["raw_images"])
         total_train += int(consumed["num_images"])
+        if packet_method == "full_real" and args.dataset == "cifar100" and int(consumed["raw_images"]) != 12500:
+            warnings.append(f"agent {row['sender_agent']} raw_images={consumed['raw_images']}，CIFAR-100 full_real 期望 12500")
         has_sender_logits = bool(packet.get("has_sender_logits", False))
         sender_logit_shape = ""
         sender_logit_dim = int(packet.get("sender_logit_dim", 0))

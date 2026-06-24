@@ -40,7 +40,7 @@ def _packet_training_images(args, packet):
     if packet.get("source") == "dsdm":
         images, _ = _decode_dsdm_images(args, packet)
         return images
-    if packet.get("source") in {"heuristic", "importance"}:
+    if packet.get("source") in {"heuristic", "importance", "full_real"}:
         return packet["images"].detach().cpu()
     raise ValueError(f"不支持的 packet source: {packet.get('source')}")
 

@@ -17,7 +17,7 @@ from config_adapter import args_to_pretty_json, build_dsdm_args_from_config, loa
 from output_manager import save_packet
 from packet_logits import attach_sender_logits_to_packet
 from progress_timer import ProgressTimer
-from selection_methods import build_heuristic_packet, build_importance_packet
+from selection_methods import build_full_real_packet, build_heuristic_packet, build_importance_packet
 from social_output_manager import (
     append_social_result,
     prepare_social_output_dirs,
@@ -69,7 +69,7 @@ def parse_cli():
         ],
         help="运行阶段",
     )
-    parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance"], help="packet 方法")
+    parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance", "full_real"], help="packet 方法")
     parser.add_argument("--init-mode", default="expert", choices=["expert", "scratch"], help="receiver 初始化方式")
     parser.add_argument("--dry-run", action="store_true", help="只打印计划，不启动训练")
     parser.add_argument("--resume", action="store_true", help="已存在输出时尽量跳过")
@@ -180,7 +180,7 @@ def _stage_build_selection_packets(cfg, config_path, base_args, cli):
     """为每个 agent 构建 Heuristic 或 Importance 核心集 packet。"""
     from agent_data import get_agent_train_dataset
 
-    if cli.packet_method not in {"heuristic", "importance"}:
+    if cli.packet_method not in {"heuristic", "importance", "full_real"}:
         print("[build_selection_packets] dsdm packet 由 distill_packets 生成，此阶段跳过。")
         return
     agent_ids = get_agent_ids(base_args, cli.only_agent)
@@ -191,6 +191,8 @@ def _stage_build_selection_packets(cfg, config_path, base_args, cli):
         train_set = get_agent_train_dataset(agent_args, agent_id, normalize=False)
         if cli.packet_method == "heuristic":
             images, labels, class_ids = build_heuristic_packet(agent_args, train_set)
+        elif cli.packet_method == "full_real":
+            images, labels, class_ids = build_full_real_packet(agent_args, train_set)
         else:
             guide_models = _load_agent_guide_models(agent_args, agent_id)
             images, labels, class_ids = build_importance_packet(agent_args, train_set, guide_models)

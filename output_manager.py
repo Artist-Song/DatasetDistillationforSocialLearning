@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 
 
-PACKET_SOURCES = {"dsdm", "heuristic", "importance"}
+PACKET_SOURCES = {"dsdm", "heuristic", "importance", "full_real"}
 GLOBAL_RESULT_FIELDS = [
     "run_name",
     "stage",
