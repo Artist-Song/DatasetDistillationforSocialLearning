@@ -128,7 +128,7 @@ CIFAR-100
 
 ### 模型设置
 
-主实验为异构设置：
+已有跨架构异构诊断设置：
 
 ```python
 agent_model_split = {
@@ -139,7 +139,18 @@ agent_model_split = {
 }
 ```
 
-用户已经完成同构实验，用于验证异构是否影响 DSDM packet transferability。
+该设置已经用于 CIFAR-100 IPC=50 初步诊断。当前发现跨架构异构会引入较强架构迁移噪声，因此下一阶段主实验优先切换为 ConvNet family 内部异构。
+
+下一阶段 ConvNet family 异构设置：
+
+```text
+agent_0: ConvNet-3-w0.5
+agent_1: ConvNet-3-w1.0
+agent_2: ConvNet-4-w1.0
+agent_3: ConvNet-4-w1.5
+```
+
+该设置保留模型容量、参数形状和中间特征维度差异，因此仍然不能直接进行参数平均、梯度共享或特征对齐；但所有 agent 处于同一 ConvNet family，有助于降低跨架构 DSDM transfer 的额外噪声。
 
 ### 通信预算
 
@@ -169,218 +180,118 @@ CIFAR-100 IPC=50 时：
 6. 用户已经完成 all-ConvNet 同构实验。
 ```
 
-当前较稳妥的阶段性结论是：
+### Upper-bound 诊断结果
+
+截至 2026-06-25，已完成 Full Real Social Transfer 和 Centralized Full Data Upper Bound。
+
+旧 centralized recipe 结果：
 
 ```text
-输入空间 packet 可以跨异构模型使用，sender logits 能在平均意义上增强外部知识吸收；
-但 IPC=50 下真实样本随机子集已经很强，DSDM 的高知识密度优势需要在更低 IPC 下继续验证；
-同时，agent 2 的 forgetting 表明 receiver loss 和训练策略仍需调整。
+ConvNet-3-IN:     50.89
+ResNet-10:        28.69
+ResNetAP-10:      33.28
 ```
 
-当前不能过度声称：
+该结果用于诊断，不能作为最终模型能力上限。ResNet / ResNetAP 过低主要由训练 recipe 不适配导致。
+
+修正 recipe 后的 centralized upper-bound：
 
 ```text
-DSDM 在 IPC=50 下全面优于核心集方法。
+ConvNet-3-IN, strict DSDM recipe: 65.24
+ResNet-10-BN, CIFAR recipe:       72.08
+ResNetAP-10-BN, CIFAR recipe:     73.47
 ```
 
-## 当前最优先验证实验
-
-用户当前只需要继续完成两个实验：
+对应结果文件：
 
 ```text
-1. Full Real Social Transfer
-2. Centralized Full Data Upper Bound
+outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_conv3in_dsdm_strict.csv
+outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_resnet10_bn_aug_ms.csv
 ```
 
-其他实验，包括 factor ablation、agent 2 loss sweep、低 IPC 曲线，暂时放后。
-
----
-
-## Experiment 1：Full Real Social Transfer
-
-目的：
+Full Real Social Transfer 当前结果：
 
 ```text
-验证社会化训练流程在通信充分条件下的上限。
+receiver 0 ConvNet:   global after 49.94, new after 49.31
+receiver 1 ConvNet:   global after 49.85, new after 50.39
+receiver 2 ResNet:    global after 29.18, new after 26.68
+receiver 3 ResNetAP:  global after 37.98, new after 35.97
 ```
 
-设计：
+注意：Full Real Social Transfer 仍使用旧 receiver training recipe，因此 ResNet receiver 结果偏低不能解释为模型能力上限。下一阶段 social receiver 训练需要同步 recipe。
+
+## 下一阶段主实验：ConvNet Family 异构 IPC=10
+
+日期：2026-06-25
+
+### 研究动机
+
+跨架构异构设置 ConvNet / ResNet / ResNetAP 虽然符合异构学习设定，但会额外引入架构迁移、训练 recipe 和 receiver 优化差异。为了更清晰地验证 DSDM packet 的单位通信知识密度，下一阶段先采用 ConvNet family 内部异构。
+
+该设置有三个优点：
 
 ```text
-每个 sender 传输自己全部真实训练数据。
-每个 sender：25 classes × 500 images = 12500 images。
-每个 receiver external data：3 × 12500 = 37500 images。
-receiver 从自身 expert model 初始化。
-训练流程保持与 social training 一致。
+1. 保留异构性：不同 depth / width 导致参数形状、特征维度和模型容量不同。
+2. 降低噪声：所有 agent 使用同一 ConvNet family，减少跨架构迁移带来的不可控因素。
+3. 对齐 DSDM：ConvNet-3/4 + InstanceNorm 更接近 DSDM 常用 evaluator / backbone 口径。
 ```
 
-需要输出：
+### 实验设定
 
 ```text
-global accuracy
-expert accuracy
-new accuracy
-forgetting
-external_comm_images
+Dataset: CIFAR-100
+Agents: 4
+Class split: 每个 agent 25 个类别，class-disjoint
+Labels: 保留 CIFAR-100 全局标签，不重映射
+Communication budget: IPC=10
 ```
 
-预期解释：
+agent 结构：
 
 ```text
-如果 FULL_REAL 明显高于 DSDM / Heuristic：
-    当前瓶颈主要是 packet 信息不足。
-
-如果 FULL_REAL 也不高：
-    当前任务设定、模型容量或 receiver training 本身上限较低。
-
-如果 FULL_REAL 下 agent 2 不遗忘：
-    agent 2 遗忘主要与 DSDM packet 或训练分布有关。
-
-如果 FULL_REAL 下 agent 2 仍遗忘：
-    agent 2 问题主要来自 loss / lr / receiver 训练策略。
+agent_0: ConvNet-3-w0.5   弱模型
+agent_1: ConvNet-3-w1.0   标准模型
+agent_2: ConvNet-4-w1.0   更深模型
+agent_3: ConvNet-4-w1.5   强模型
 ```
 
----
-
-## Experiment 2：Centralized Full Data Upper Bound
-
-目的：
+类别划分：
 
 ```text
-确认不同模型在 CIFAR-100 全量数据上的基础上限。
+agent_0: classes 0-24
+agent_1: classes 25-49
+agent_2: classes 50-74
+agent_3: classes 75-99
 ```
 
-设计：
+### 对比方法
 
 ```text
-ConvNet on full CIFAR-100
-ResNet on full CIFAR-100
-ResNet_AP on full CIFAR-100
+Expert Only / Before Social
+Full Real Social Transfer
+Heuristic Real Packet, IPC=10
+DSDM Packet, IPC=10
+DSDM Packet + Logits, IPC=10
 ```
 
-该实验不属于 social learning，只作为 upper bound。
+实验只改变通信包方法，评价指标和 receiver training 口径保持一致。
 
-需要输出：
+### 关键问题
 
 ```text
-full test accuracy
-training epochs
-model type
+1. 在 IPC=10 下，DSDM 是否相比随机真实样本 Heuristic 展现更高知识密度？
+2. DSDM_LOGIT 是否在 image packet 基础上进一步提升 new-class absorption？
+3. 不同容量 ConvNet receiver 对 DSDM packet 的吸收能力是否不同？
+4. Full Real Social Transfer 与 centralized upper-bound 之间的差距是否主要来自 receiver training recipe？
+5. 是否仍存在明显 expert forgetting，需要调整 FR loss 或 receiver 训练策略？
 ```
 
-解释：
+### 执行前要求
 
 ```text
-如果 centralized full data 上限本身不高，则 social result 不应期待过高。
-如果 centralized full data 很高，则当前 packet / social training 仍有较大改进空间。
-```
-
-## 需要新增或确认的工程功能
-
-### 1. full_real packet method
-
-新增或确认正式 packet method：
-
-```text
-full_real
-```
-
-功能：
-
-```text
-每个 agent 将自身全部 expert-class 真实训练数据保存为 packet。
-```
-
-涉及文件：
-
-```text
-run_social_pipeline.py
-output_manager.py
-packet_consumer.py
-selection_methods.py
-validate_packets.py
-```
-
-### 2. centralized full data training script
-
-新增或确认脚本：
-
-```text
-run_centralized_full.py
-```
-
-功能：
-
-```text
-在完整 CIFAR-100 训练集上训练指定模型。
-```
-
-支持参数：
-
-```text
---config
---model convnet/resnet/resnet_ap
---epochs
---lr
---batch-size
-```
-
-输出：
-
-```text
-outputs/{run_name}/centralized_full/{model}/metrics.json
-outputs/{run_name}/centralized_full/{model}/checkpoint.pt
-outputs/{run_name}/centralized_full/centralized_results.csv
-```
-
-## 实验结果汇总格式
-
-Full Real Social Transfer 保留逐 agent 结果，并额外计算 4-agent 平均值。
-
-### 表 1：逐 agent 结果
-
-| Method | Receiver | Model | Global | Expert | New | Forgetting | External Images |
-|---|---:|---|---:|---:|---:|---:|---:|
-
-### 表 2：平均结果
-
-| Method | Init | Logits | Global Avg | Expert Avg | New Avg | Forgetting Avg | External Images |
-|---|---|---|---:|---:|---:|---:|---:|
-
-Centralized Full Data 只需要 global accuracy：
-
-| Model | Data | Epochs | LR | Batch Size | Global Acc |
-|---|---|---:|---:|---:|---:|
-
-## 阶段性汇报口径
-
-当前阶段可以这样向老师汇报：
-
-```text
-当前 CIFAR-100 IPC=50 实验已经证明 input-space packet 可以跨 ConvNet、ResNet 和 ResNet_AP receiver 使用，sender logits 也能在平均意义上增强 DSDM packet 的外部知识吸收能力。但 IPC=50 下随机真实样本核心集已经具有较强竞争力，说明 DSDM 的高知识密度优势需要在更低通信预算下进一步验证。
-
-同时，agent 2 出现严重 expert forgetting，说明当前 receiver loss 和训练策略还不够稳定。因此，当前优先补充 Full Real Social Transfer 和 Centralized Full Data Upper Bound 两个验证实验，以明确当前性能瓶颈到底来自任务上限、模型上限、packet 信息不足，还是 social training 流程本身。
-```
-
-## 当前最小任务清单
-
-优先级从高到低：
-
-```text
-1. 实现或确认 FULL_REAL social transfer。
-2. 实现或确认 centralized full CIFAR-100 upper bound。
-3. 更新并上传 AGENTS.md。
-4. 更新并上传 PROJECT_SPEC.md。
-5. 运行 py_compile 和 dry-run。
-6. 提交并 push 到 GitHub。
-```
-
-## 当前不建议立即做的事情
-
-```text
-1. 不建议立刻设计复杂 attention fusion。
-2. 不建议立刻引入多轮通信。
-3. 不建议立刻改 DSDM 主算法。
-4. 不建议只根据 IPC=50 结果判断方法失败。
-5. 不建议在 Full Real 和 Centralized 结果出来前大规模调 agent 2 loss。
+1. 先新增 ConvNet family 异构 config，不覆盖现有跨架构诊断 config。
+2. per-agent 显式配置 depth / width / norm_type。
+3. expert / receiver 训练尽量采用与 DSDM 兼容的 ConvNet recipe。
+4. 每次修改后运行 py_compile 和 dry-run。
+5. 正式运行前先确认实验计划和输出目录。
 ```

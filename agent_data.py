@@ -90,6 +90,8 @@ def get_agent_class_split(args_or_cfg):
         cfg_split = args_or_cfg.get("agents", {}).get("class_split")
         if cfg_split:
             return _normalize_split(cfg_split)
+    if hasattr(args_or_cfg, "agent_class_split"):
+        return {int(k): [int(c) for c in v] for k, v in args_or_cfg.agent_class_split.items()}
     dataset_name = _get_dataset_name(args_or_cfg)
     if dataset_name == "cifar100":
         return CIFAR100_AGENT_CLASS_SPLIT
@@ -104,6 +106,8 @@ def get_agent_model_split(args_or_cfg):
         cfg_split = args_or_cfg.get("agents", {}).get("model_split")
         if cfg_split:
             return _normalize_model_split(cfg_split)
+    if hasattr(args_or_cfg, "agent_model_split"):
+        return {int(k): str(v) for k, v in args_or_cfg.agent_model_split.items()}
     dataset_name = _get_dataset_name(args_or_cfg)
     if dataset_name == "cifar100":
         return CIFAR100_AGENT_MODEL_SPLIT
@@ -149,20 +153,42 @@ def get_receiver_ids(args_or_cfg=None, only_receiver=None):
     return [int(only_receiver)]
 
 
+
+
+def _refresh_model_metadata(args):
+    """根据实际 net_type/depth/width 刷新 DSDM 模型标签和特征层。"""
+    if args.net_type == "convnet":
+        args.f_idx = str(args.depth - 1)
+    args.datatag = f"{args.dataset}"
+    if args.net_type == "resnet_ap":
+        args.modeltag = f"resnet{args.depth}ap"
+    elif args.net_type == "convnet":
+        args.modeltag = f"conv{args.depth}"
+    else:
+        args.modeltag = f"{args.net_type}{args.depth}"
+    if args.norm_type == "instance":
+        args.modeltag += "in"
+    if args.width != 1.0:
+        args.modeltag += f"_w{args.width}"
+
 def build_agent_args(base_cfg, config_path, agent_id):
     """基于主配置构造单个 agent 的 DSDM args。"""
     args = build_dsdm_args_from_config(base_cfg, config_path=config_path)
     class_split = get_agent_class_split(base_cfg)
     model_split = get_agent_model_split(base_cfg)
+    model_cfg = base_cfg.get("model_pool", {}).get("models", {}).get(model_split[int(agent_id)], {})
     num_classes = get_num_classes(base_cfg)
     args.agent_id = int(agent_id)
     args.num_classes = num_classes
     args.nclass = num_classes
     args.active_class_ids = list(class_split[int(agent_id)])
-    args.net_type = model_split[int(agent_id)]
-    if args.net_type in {"resnet", "resnet_ap"}:
-        args.depth = 10
-    args.sender_model = args.net_type
+    args.model_name = model_split[int(agent_id)]
+    args.net_type = str(model_cfg.get("family", args.model_name))
+    args.depth = int(model_cfg.get("depth", args.depth))
+    args.width = float(model_cfg.get("width", args.width))
+    args.norm_type = str(model_cfg.get("norm_type", args.norm_type))
+    args.sender_model = args.model_name
+    _refresh_model_metadata(args)
     args.save_pretrain_dir = str(get_agent_dir(args, agent_id) / "checkpoints")
     args.save_dir = str(get_agent_dir(args, agent_id) / "checkpoints")
     return args
@@ -183,9 +209,12 @@ def get_receiver_dir(args, receiver_id):
     return get_run_dir(args) / "social_learning" / f"receiver_agent_{int(receiver_id)}"
 
 
-def get_train_dataset(args, normalize=False):
+def get_train_dataset(args, normalize=False, augment=False):
     """根据 args.dataset 加载训练集，标签保持全局编号。"""
-    transform_list = [transforms.ToTensor()]
+    transform_list = []
+    if augment and args.dataset in {"cifar10", "cifar100"}:
+        transform_list.extend([transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip()])
+    transform_list.append(transforms.ToTensor())
     if normalize:
         from data import MEANS, STDS
 

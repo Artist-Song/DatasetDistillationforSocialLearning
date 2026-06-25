@@ -1,8 +1,8 @@
 project:
   name: social_packet_learning
-  stage: dsdm_reproduce
+  stage: upper_bound_validation
   output_root: ./outputs
-  run_name: cifar100_4agent_25cls_ipc10_logit
+  run_name: cifar100_4agent_25cls_upper_bound
 
 dataset:
   name: cifar100
@@ -25,6 +25,45 @@ model_pool:
       depth: 10
       width: 1.0
       norm_type: batch
+
+centralized_full:
+  recipes:
+    convnet:
+      recipe_name: conv3in_dsdm_strict
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: false
+      use_dsdm_train: true
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    resnet:
+      recipe_name: resnet10_bn_aug_ms
+      epochs: 200
+      lr: 0.1
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: true
+      use_dsdm_train: false
+      scheduler: multistep
+      scheduler_milestones: [100, 150]
+      scheduler_gamma: 0.1
+    resnet_ap:
+      recipe_name: resnet10_bn_aug_ms
+      epochs: 200
+      lr: 0.1
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: true
+      use_dsdm_train: false
+      scheduler: multistep
+      scheduler_milestones: [100, 150]
+      scheduler_gamma: 0.1
 
 distillation:
   method: dsdm
@@ -51,6 +90,7 @@ selection:
   methods:
     - heuristic
     - importance
+    - full_real
   heuristic:
     strategy: random_per_class
   importance:
@@ -86,8 +126,8 @@ social_learning:
     lambda_fr: 0.05
 
 logits:
-  enabled: true
-  lambda_kd: 0.5
+  enabled: false
+  lambda_kd: 0.0
   temperature: 2.0
 
 evaluation:

@@ -96,7 +96,12 @@ def _print_dry_run(args, cli):
     print(f"agents: {get_agent_ids(args, cli.only_agent)}")
     print(f"receivers: {get_receiver_ids(args, cli.only_receiver)}")
     for agent_id, classes in class_split.items():
-        print(f"agent {agent_id}: model={model_split[agent_id]} classes={classes}")
+        agent_args = build_agent_args(cfg, cli.config, agent_id)
+        print(
+            f"agent {agent_id}: model={model_split[agent_id]} "
+            f"net_type={agent_args.net_type} depth={agent_args.depth} "
+            f"width={agent_args.width} norm={agent_args.norm_type} classes={classes}"
+        )
     if cli.stage == "attach_logits":
         for agent_id in get_agent_ids(args, cli.only_agent):
             packet_path = get_agent_dir(args, agent_id) / "packets" / f"{cli.packet_method}_packet.pt"

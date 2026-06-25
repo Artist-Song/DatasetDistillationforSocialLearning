@@ -262,8 +262,20 @@ def _apply_config_overrides(args, cfg):
     args.nclass = dataset.get("num_classes", args.nclass)
     args.num_classes = dataset.get("num_classes", args.nclass)
     args.size = dataset.get("image_size", args.size)
+    agents_cfg = cfg.get("agents", {})
+    if agents_cfg.get("class_split"):
+        args.agent_class_split = {
+            int(str(key).replace("agent_", "")): [int(c) for c in value]
+            for key, value in agents_cfg.get("class_split", {}).items()
+        }
+    if agents_cfg.get("model_split"):
+        args.agent_model_split = {
+            int(str(key).replace("agent_", "")): str(value)
+            for key, value in agents_cfg.get("model_split", {}).items()
+        }
 
-    args.net_type = model_name
+    args.model_name = model_name
+    args.net_type = model_cfg.get("family", model_name)
     args.depth = model_cfg.get("depth", args.depth)
     args.width = model_cfg.get("width", args.width)
     args.norm_type = model_cfg.get("norm_type", args.norm_type)

@@ -24,21 +24,22 @@ Distilled Knowledge Packets for Communication-Efficient Heterogeneous Socialized
 
 当前项目已经从 CIFAR-10 初步验证阶段进入 CIFAR-100 诊断验证阶段。
 
-当前阶段的重点是通过验证实验确认当前性能瓶颈来源：
-
-```text
-1. 当前 CIFAR-100 class-disjoint 任务本身的性能上限是多少？
-2. DSDM packet 性能较弱是因为 packet 本身质量不足，还是因为异构 receiver 难以吸收？
-3. factor=2 的 compact synthetic image 是否带来明显性能损失？
-4. agent 2 的严重 forgetting 是 loss 设置问题，还是 packet / 训练流程问题？
-5. 在更低通信预算下，DSDM 是否体现出高知识密度优势？
-```
-
-目前用户已经完成同构实验。当前最优先只做两个 upper-bound 验证：
+截至 2026-06-25，已经完成两类 upper-bound 诊断：
 
 ```text
 1. Full Real Social Transfer
 2. Centralized Full Data Upper Bound
+```
+
+诊断结论是：旧 ResNet / ResNet_AP 上界过低主要来自训练 recipe 不适配，而不是模型本身能力不足。修正训练 recipe 后，ResNet-10 / ResNetAP-10 在完整 CIFAR-100 上可以达到 72%+。ConvNet-3 按严格 DSDM 训练 recipe 可达到 65%+。
+
+当前下一阶段研究重点转向：
+
+```text
+1. 在更干净的 ConvNet family 异构设定下验证 DSDM packet 的社会化学习效果。
+2. 在 IPC=10 等更低通信预算下比较 DSDM / DSDM_LOGIT / Heuristic / Full Real。
+3. 分析 DSDM 的高知识密度优势是否能在低通信预算下超过随机真实样本核心集。
+4. 继续观察 receiver forgetting，并判断是否需要调整 receiver loss。
 ```
 
 ## 当前核心实验设定
@@ -72,7 +73,7 @@ agent_class_split = {
 
 ### 模型异构设定
 
-当前主实验采用异构模型：
+当前已有跨架构异构诊断模型：
 
 ```python
 agent_model_split = {
@@ -82,6 +83,19 @@ agent_model_split = {
     3: "resnet_ap",
 }
 ```
+
+下一阶段主实验优先采用 ConvNet family 内部异构，以降低跨架构迁移噪声，同时保留参数、梯度和中间特征不可直接共享的问题：
+
+```python
+agent_model_split = {
+    0: "convnet",  # ConvNet-3-w0.5
+    1: "convnet",  # ConvNet-3-w1.0
+    2: "convnet",  # ConvNet-4-w1.0
+    3: "convnet",  # ConvNet-4-w1.5
+}
+```
+
+ConvNet family 异构需要通过 per-agent model config 显式指定 depth / width / norm_type。
 
 所有模型输出维度固定为：
 
@@ -191,30 +205,66 @@ python run_social_pipeline.py \
 run_centralized_full.py
 ```
 
-推荐运行：
+推荐运行采用 config 中的模型专属 recipe，不再手动传旧 lr：
 
 ```bash
 python run_centralized_full.py \
-  --config configs/main_cifar100_logit.yaml \
-  --model convnet \
-  --epochs 500 \
-  --lr 0.001 \
-  --batch-size 128
+  --config configs/main_cifar100_upper_bound.yaml \
+  --model convnet
 
 python run_centralized_full.py \
-  --config configs/main_cifar100_logit.yaml \
-  --model resnet \
-  --epochs 500 \
-  --lr 0.001 \
-  --batch-size 128
+  --config configs/main_cifar100_upper_bound.yaml \
+  --model resnet
 
 python run_centralized_full.py \
-  --config configs/main_cifar100_logit.yaml \
-  --model resnet_ap \
-  --epochs 500 \
-  --lr 0.001 \
-  --batch-size 128
+  --config configs/main_cifar100_upper_bound.yaml \
+  --model resnet_ap
 ```
+
+当前已记录的新 centralized upper-bound 结果：
+
+```text
+ConvNet-3-IN, strict DSDM recipe: 65.24
+ResNet-10-BN, CIFAR recipe:       72.08
+ResNetAP-10-BN, CIFAR recipe:     73.47
+```
+
+对应结果文件：
+
+```text
+outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_conv3in_dsdm_strict.csv
+outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_resnet10_bn_aug_ms.csv
+```
+
+旧的 50.89 / 28.69 / 33.28 结果保留在 `centralized_results.csv`，仅作为训练 recipe 诊断对照。
+
+## 下一阶段：ConvNet Family 异构社会化实验
+
+目的：当前 ConvNet / ResNet / ResNetAP 跨架构异构包含较强的架构迁移噪声。下一阶段先采用 ConvNet family 内部 depth-width 容量异构，保留模型参数形状、特征维度和容量差异，同时降低跨架构蒸馏迁移干扰。
+
+日期：2026-06-25
+
+推荐 agent 结构：
+
+```text
+agent_0: ConvNet-3-w0.5   弱模型
+agent_1: ConvNet-3-w1.0   标准模型
+agent_2: ConvNet-4-w1.0   更深模型
+agent_3: ConvNet-4-w1.5   强模型
+```
+
+推荐对比方法：
+
+```text
+Expert Only / Before Social
+Full Real Social Transfer
+Heuristic Real Packet, IPC=10
+DSDM Packet, IPC=10
+DSDM Packet + Logits, IPC=10
+```
+
+本组实验只改变 packet method，不改变评价指标口径。重点验证 DSDM 在更低通信预算 IPC=10 下是否相对随机真实样本核心集体现更高单位通信知识密度。
+
 
 ## DSDM factor 规则
 
@@ -287,6 +337,8 @@ logits 的作用是：
 3. IMPORTANCE_LOGIT 明显较弱。
 4. DSDM_LOGIT 在 ResNet / ResNet_AP receiver 上的 new-class absorption 有一定优势。
 5. agent 2 存在严重 expert forgetting。
+6. 旧 ResNet / ResNetAP upper-bound 过低由 recipe 导致；修正后 ResNet-10 / ResNetAP-10 上界恢复到 72%+。
+7. ConvNet-3-IN 按严格 DSDM recipe 上界为 65.24，高于旧训练 recipe 的 50.89。
 ```
 
 当前不能直接声称：
@@ -355,5 +407,6 @@ python run_social_pipeline.py \
 2. IPC=50 下 Heuristic 较强，说明该通信预算下真实样本子集已经具备较强竞争力。
 3. DSDM 的核心价值应在更低通信预算下验证。
 4. agent 2 的 forgetting 暴露出 receiver loss 需要调整。
-5. 当前优先做 Full Real Social Transfer 和 Centralized Full Data Upper Bound，确认任务上限和训练流程上限。
+5. upper-bound 诊断已完成，当前重点转向 ConvNet family 异构 IPC=10 主实验。
+6. 汇报 centralized upper-bound 时区分旧 recipe 诊断结果和新 recipe 上界结果。
 ```

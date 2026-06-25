@@ -171,7 +171,7 @@ class SocialTrainer:
         method = f"{base_method}_LOGIT" if use_logits else base_method
         return {
             "receiver_agent": self.receiver_agent,
-            "receiver_model": self.model_split[self.receiver_agent],
+            "receiver_model": getattr(self.args, "model_name", self.model_split[self.receiver_agent]),
             "expert_classes": ",".join(str(c) for c in self.expert_classes),
             "packet_method": getattr(self.args, "packet_method", "dsdm"),
             "method": method,

@@ -554,6 +554,10 @@ def condense(args, logger, device='cuda'):
         j = random.randint(0, args.pretrained_model_number-1)
         model = define_model(args, nclass).to(device)
         model.load_state_dict(torch.load(pretrained_paths[j], map_location=device))
+        # 固定 guide model，避免 BatchNorm 统计在蒸馏小批量中漂移。
+        model.eval()
+        for param in model.parameters():
+            param.requires_grad_(False)
 
         loss_total = 0
         synset.data.data = torch.clamp(synset.data.data, min=0., max=1.)
