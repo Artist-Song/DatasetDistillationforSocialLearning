@@ -61,7 +61,8 @@ class SocialTrainer:
         """构建 before/after 模型并加载 receiver expert 权重。"""
         from train import define_model
 
-        self.args.net_type = self.model_split[self.receiver_agent]
+        # receiver_args 已在 build_agent_args 中解析为 DSDM 可识别的 family/depth/width。
+        self.args.model_name = self.model_split[self.receiver_agent]
         model_old = define_model(self.args, get_num_classes(self.args)).to(self.device)
         model_new = define_model(self.args, get_num_classes(self.args)).to(self.device)
         if getattr(self.args, "init_mode", "expert") == "expert":
@@ -103,8 +104,13 @@ class SocialTrainer:
         """执行 receiver 二轮训练并返回结果指标。"""
         model_old, model_new = self._build_models()
         receiver_dir = get_receiver_dir(self.args, self.receiver_agent)
-        (receiver_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
-        torch.save(model_old.state_dict(), receiver_dir / "checkpoints" / "before_social.pt")
+        method_tag = getattr(self.args, "packet_method", "dsdm").lower()
+        if bool(getattr(self.args, "use_logits", False)):
+            method_tag = f"{method_tag}_logit"
+        method_tag = f"{method_tag}_{getattr(self.args, 'init_mode', 'expert')}"
+        checkpoint_dir = receiver_dir / "checkpoints" / method_tag
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        torch.save(model_old.state_dict(), checkpoint_dir / "before_social.pt")
 
         before = evaluate_receiver_model(self.args, model_old, self.receiver_agent, self.device)
         use_logits = bool(getattr(self.args, "use_logits", False))
@@ -159,7 +165,7 @@ class SocialTrainer:
                 last_cls = float(loss_cls.detach().cpu())
                 last_fr = float(loss_fr.detach().cpu())
                 last_kd = float(loss_kd.detach().cpu())
-        torch.save(model_new.state_dict(), receiver_dir / "checkpoints" / "after_social.pt")
+        torch.save(model_new.state_dict(), checkpoint_dir / "after_social.pt")
         after = evaluate_receiver_model(self.args, model_new, self.receiver_agent, self.device)
         external_raw = sum(p["raw_images"] for p in packets if p["sender_agent"] != self.receiver_agent)
         external_logit_bytes = (
