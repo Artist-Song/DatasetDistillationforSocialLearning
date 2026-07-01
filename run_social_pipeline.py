@@ -16,6 +16,11 @@ from agent_trainer import prepare_agent_pretrained_dir, train_agent_experts
 from config_adapter import args_to_pretty_json, build_dsdm_args_from_config, load_config
 from output_manager import save_packet
 from packet_logits import attach_sender_logits_to_packet
+from packet_generalist import (
+    attach_generalist_logits_to_packets,
+    ensure_reused_artifacts,
+    train_packet_generalist,
+)
 from progress_timer import ProgressTimer
 from selection_methods import build_full_real_packet, build_heuristic_packet, build_importance_packet
 from social_output_manager import (
@@ -63,6 +68,8 @@ def parse_cli():
             "distill_packets",
             "build_selection_packets",
             "attach_logits",
+            "train_packet_generalist",
+            "attach_generalist_logits",
             "build_communication",
             "train_receivers",
             "all",
@@ -102,10 +109,15 @@ def _print_dry_run(args, cli):
             f"net_type={agent_args.net_type} depth={agent_args.depth} "
             f"width={agent_args.width} norm={agent_args.norm_type} classes={classes}"
         )
-    if cli.stage == "attach_logits":
+    if cli.stage in {"attach_logits", "attach_generalist_logits"}:
         for agent_id in get_agent_ids(args, cli.only_agent):
             packet_path = get_agent_dir(args, agent_id) / "packets" / f"{cli.packet_method}_packet.pt"
-            print(f"attach_logits packet: agent={agent_id} path={packet_path}")
+            print(f"{cli.stage} packet: agent={agent_id} path={packet_path}")
+    if cli.stage == "train_packet_generalist":
+        generalist_cfg = cfg.get("generalist", {})
+        reuse_cfg = cfg.get("reuse", {})
+        print(f"generalist model: {generalist_cfg.get('model', '<default>')}")
+        print(f"reuse source_run_name: {reuse_cfg.get('source_run_name', '')}")
     print(f"run_dir: {Path(args.output_root) / args.run_name}")
 
 
@@ -121,6 +133,11 @@ def _build_stages(cfg, cli):
         stages.append("build_selection_packets")
     if cli.stage in {"attach_logits"} or (cli.stage == "all" and logits_enabled):
         stages.append("attach_logits")
+    generalist_enabled = bool(cfg.get("generalist", {}).get("enabled", False))
+    if cli.stage in {"train_packet_generalist"} or (cli.stage == "all" and generalist_enabled):
+        stages.append("train_packet_generalist")
+    if cli.stage in {"attach_generalist_logits"} or (cli.stage == "all" and generalist_enabled):
+        stages.append("attach_generalist_logits")
     if cli.stage in {"build_communication", "all"}:
         stages.append("build_communication")
     if cli.stage in {"train_receivers", "all"}:
@@ -220,6 +237,25 @@ def _stage_attach_logits(cfg, config_path, base_args, cli):
     _stage_done("attach_logits")
 
 
+
+def _stage_train_packet_generalist(cfg, base_args, cli):
+    """用复用的 communicated packets 训练 packet generalist。"""
+    _stage_banner("train_packet_generalist", f"method={cli.packet_method}")
+    copied = ensure_reused_artifacts(cfg, base_args, cli.packet_method)
+    if copied:
+        print(f"[reuse] copied artifacts: {len(copied)}")
+    train_packet_generalist(cfg, base_args, cli.packet_method)
+    _stage_done("train_packet_generalist")
+
+
+def _stage_attach_generalist_logits(cfg, base_args, cli):
+    """用 packet generalist 为 packets 附加 full-class logits。"""
+    agent_ids = get_agent_ids(base_args, cli.only_agent)
+    _stage_banner("attach_generalist_logits", f"method={cli.packet_method} agents={agent_ids}")
+    ensure_reused_artifacts(cfg, base_args, cli.packet_method)
+    attach_generalist_logits_to_packets(cfg, base_args, cli.packet_method, only_agent=cli.only_agent)
+    _stage_done("attach_generalist_logits")
+
 def _stage_build_communication(base_args, cli):
     """把 agent packet 注册到 packet_hub 并写 manifest。"""
     agent_ids = get_agent_ids(base_args, cli.only_agent)
@@ -259,8 +295,12 @@ def _stage_train_receivers(base_args, cli):
         receiver_args.receiver_lr = receiver_cfg.get("lr", receiver_args.lr)
         receiver_args.lambda_fr = receiver_cfg.get("lambda_fr", 0.05)
         logits_cfg = cfg.get("logits", {})
-        receiver_args.use_logits = bool(logits_cfg.get("enabled", False))
-        receiver_args.lambda_kd = float(logits_cfg.get("lambda_kd", 0.5)) if receiver_args.use_logits else 0.0
+        communication_cfg = cfg.get("communication", {})
+        receiver_args.communication_mode = communication_cfg.get("mode", "direct")
+        receiver_args.use_logits = bool(communication_cfg.get("use_sender_logits", logits_cfg.get("enabled", False)))
+        receiver_args.use_generalist_logits = bool(communication_cfg.get("use_generalist_logits", False))
+        receiver_args.kd_mix_beta = float(communication_cfg.get("kd_mix_beta", 0.5))
+        receiver_args.lambda_kd = float(logits_cfg.get("lambda_kd", 0.5)) if (receiver_args.use_logits or receiver_args.use_generalist_logits) else 0.0
         receiver_args.kd_temperature = float(logits_cfg.get("temperature", 2.0))
         receiver_args.packet_method = cli.packet_method
         receiver_args.init_mode = cli.init_mode
@@ -310,6 +350,14 @@ def main():
         _stage_attach_logits(cfg, cli.config, base_args, cli)
         finished += 1
         pipeline_progress.update(finished, extra="attach_logits")
+    if "train_packet_generalist" in stages:
+        _stage_train_packet_generalist(cfg, base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="train_packet_generalist")
+    if "attach_generalist_logits" in stages:
+        _stage_attach_generalist_logits(cfg, base_args, cli)
+        finished += 1
+        pipeline_progress.update(finished, extra="attach_generalist_logits")
     if "build_communication" in stages:
         _stage_build_communication(base_args, cli)
         finished += 1

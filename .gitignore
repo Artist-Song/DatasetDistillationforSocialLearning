@@ -1,0 +1,21 @@
+# Python/runtime caches
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Local data and large experiment artifacts
+data/
+logs/
+outputs/**
+!outputs/
+!outputs/experiment_registry/
+!outputs/experiment_registry/*.csv
+!outputs/experiment_registry/README.md
+
+# Model and packet artifacts
+*.pt
+*.pth
+*.tar.gz
+
+# Local reference PDFs
+paper/*.pdf

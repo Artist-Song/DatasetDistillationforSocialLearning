@@ -19,11 +19,15 @@ SOCIAL_RESULT_FIELDS = [
     "use_fr",
     "lambda_fr",
     "use_logits",
+    "communication_mode",
+    "use_generalist_logits",
+    "kd_mix_beta",
     "lambda_kd",
     "kd_temperature",
     "ipc",
     "external_comm_images",
     "external_comm_logit_bytes",
+    "external_comm_generalist_logit_bytes",
     "acc_global_before",
     "acc_expert_before",
     "acc_global_after",
@@ -33,6 +37,8 @@ SOCIAL_RESULT_FIELDS = [
     "loss_cls",
     "loss_fr",
     "loss_kd",
+    "loss_sender_kd",
+    "loss_generalist_kd",
     "time",
 ]
 
@@ -193,8 +199,14 @@ def _migrate_social_result_row(row, old_fields):
     clean["use_fr"] = row.get("use_fr", "true")
     clean["lambda_fr"] = row.get("lambda_fr", "0.05")
     clean["use_logits"] = row.get("use_logits", "false")
+    clean["communication_mode"] = row.get("communication_mode", "direct")
+    clean["use_generalist_logits"] = row.get("use_generalist_logits", "false")
+    clean["kd_mix_beta"] = row.get("kd_mix_beta", "0.0")
     clean["lambda_kd"] = row.get("lambda_kd", "0.0")
     clean["kd_temperature"] = row.get("kd_temperature", "2.0")
     clean["external_comm_logit_bytes"] = row.get("external_comm_logit_bytes", "0")
+    clean["external_comm_generalist_logit_bytes"] = row.get("external_comm_generalist_logit_bytes", "0")
     clean["loss_kd"] = row.get("loss_kd", "0.0")
+    clean["loss_sender_kd"] = row.get("loss_sender_kd", "0.0")
+    clean["loss_generalist_kd"] = row.get("loss_generalist_kd", "0.0")
     return clean

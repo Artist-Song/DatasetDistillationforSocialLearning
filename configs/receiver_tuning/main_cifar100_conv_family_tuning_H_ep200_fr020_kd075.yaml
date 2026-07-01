@@ -1,0 +1,169 @@
+project:
+  name: social_packet_learning
+  stage: conv_family_receiver_tuning
+  output_root: ./outputs
+  run_name: cifar100_4agent_25cls_conv_family_tuning_H_ep200_fr020_kd075
+
+dataset:
+  name: cifar100
+  data_dir: ./data
+  num_classes: 100
+  image_size: 32
+
+model_pool:
+  default: convnet3w1
+  models:
+    convnet3w05:
+      family: convnet
+      depth: 3
+      width: 0.5
+      norm_type: instance
+    convnet3w1:
+      family: convnet
+      depth: 3
+      width: 1.0
+      norm_type: instance
+    convnet4w1:
+      family: convnet
+      depth: 4
+      width: 1.0
+      norm_type: instance
+    convnet4w15:
+      family: convnet
+      depth: 4
+      width: 1.5
+      norm_type: instance
+
+centralized_full:
+  recipes:
+    convnet3w05:
+      recipe_name: conv_family_dsdm_strict
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: false
+      use_dsdm_train: true
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    convnet3w1:
+      recipe_name: conv_family_dsdm_strict
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: false
+      use_dsdm_train: true
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    convnet4w1:
+      recipe_name: conv_family_dsdm_strict
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: false
+      use_dsdm_train: true
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    convnet4w15:
+      recipe_name: conv_family_dsdm_strict
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: false
+      use_dsdm_train: true
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+
+distillation:
+  method: dsdm
+  ipc: 10
+  factor: 2
+  init: mix
+  decode_type: single
+  aug_type: color_crop_cutout
+  match: semantic
+  metric: mse
+  f_idx: "2"
+  niter: 10000
+  lr_img: 0.1
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  smooth_iter: 2000
+  cov_weight: 50.0
+  h_p_weight: 0.2
+  smooth_factor: 0.99
+
+selection:
+  enabled: true
+  methods:
+    - heuristic
+    - full_real
+  heuristic:
+    strategy: random_per_class
+  importance:
+    scorer: guide_ensemble
+    score_type: low_confidence
+
+packet:
+  enabled: true
+  format: hard_label_images
+
+communication:
+  enabled: false
+  protocol: none
+
+agents:
+  num_agents: 4
+  num_classes: 100
+  class_split:
+    agent_0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    agent_1: [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+    agent_2: [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74]
+    agent_3: [75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99]
+  model_split:
+    agent_0: convnet3w05
+    agent_1: convnet3w1
+    agent_2: convnet4w1
+    agent_3: convnet4w15
+
+reuse:
+  source_run_name: cifar100_4agent_25cls_conv_family_ipc10
+  reuse_packets: true
+  reuse_experts: true
+  overwrite_packets: false
+  overwrite_experts: false
+
+social_learning:
+  receiver:
+    epochs: 200
+    lr: 0.01
+    lambda_fr: 0.2
+
+logits:
+  enabled: true
+  lambda_kd: 0.75
+  temperature: 2.0
+
+evaluation:
+  enabled: true
+  epochs: 1500
+  batch_size: 64
+  repeat: 1
+
+runtime:
+  seed: 0
+  workers: 8
+  device: cuda
+  gpu_id: 0

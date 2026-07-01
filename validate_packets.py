@@ -117,6 +117,12 @@ def validate_packets(args, packet_method):
         sender_logit_num_images = int(packet.get("sender_logit_num_images", 0))
         sender_logit_dtype = packet.get("sender_logit_dtype", "")
         sender_logit_bytes = int(consumed.get("sender_logit_bytes", 0))
+        has_generalist_logits = bool(packet.get("has_generalist_logits", False))
+        generalist_logit_shape = ""
+        generalist_logit_dim = int(packet.get("generalist_logit_dim", 0))
+        generalist_logit_num_images = int(packet.get("generalist_logit_num_images", 0))
+        generalist_logit_dtype = packet.get("generalist_logit_dtype", "")
+        generalist_logit_bytes = int(consumed.get("generalist_logit_bytes", 0))
         if has_sender_logits:
             sender_logit_shape = "x".join(str(x) for x in packet["sender_logits"].shape)
             total_sender_logit_bytes += sender_logit_bytes
@@ -124,6 +130,12 @@ def validate_packets(args, packet_method):
                 warnings.append(f"agent {row['sender_agent']} sender_logit_num_images 与训练图片数不一致")
             if sender_logit_dim != len(packet.get("class_ids", [])):
                 warnings.append(f"agent {row['sender_agent']} sender_logit_dim 与 class_ids 数量不一致")
+        if has_generalist_logits:
+            generalist_logit_shape = "x".join(str(x) for x in packet["generalist_logits"].shape)
+            if generalist_logit_num_images != int(consumed["num_images"]):
+                warnings.append(f"agent {row['sender_agent']} generalist_logit_num_images 与训练图片数不一致")
+            if generalist_logit_dim != get_num_classes(args):
+                warnings.append(f"agent {row['sender_agent']} generalist_logit_dim={generalist_logit_dim}，期望 {get_num_classes(args)}")
         packet_rows.append(
             {
                 "sender_agent": row["sender_agent"],
@@ -145,6 +157,12 @@ def validate_packets(args, packet_method):
                 "sender_logit_num_images": sender_logit_num_images,
                 "sender_logit_dtype": sender_logit_dtype,
                 "sender_logit_bytes": sender_logit_bytes,
+                "has_generalist_logits": has_generalist_logits,
+                "generalist_logit_shape": generalist_logit_shape,
+                "generalist_logit_dim": generalist_logit_dim,
+                "generalist_logit_num_images": generalist_logit_num_images,
+                "generalist_logit_dtype": generalist_logit_dtype,
+                "generalist_logit_bytes": generalist_logit_bytes,
             }
         )
 
@@ -155,6 +173,7 @@ def validate_packets(args, packet_method):
         "per_class_raw_images": {str(k): int(per_class_raw.get(k, 0)) for k in range(get_num_classes(args))},
         "per_class_train_images": {str(k): int(per_class_train.get(k, 0)) for k in range(get_num_classes(args))},
         "total_sender_logit_bytes": int(total_sender_logit_bytes),
+        "total_generalist_logit_bytes": int(sum(row.get("generalist_logit_bytes", 0) for row in packet_rows)),
     }
     warnings.extend(_build_warning(args, packet_method, summary))
     result = {"summary": summary, "packets": packet_rows, "warnings": warnings}
@@ -183,6 +202,12 @@ def validate_packets(args, packet_method):
             "sender_logit_num_images",
             "sender_logit_dtype",
             "sender_logit_bytes",
+            "has_generalist_logits",
+            "generalist_logit_shape",
+            "generalist_logit_dim",
+            "generalist_logit_num_images",
+            "generalist_logit_dtype",
+            "generalist_logit_bytes",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

@@ -234,6 +234,8 @@ receiver 3 ResNetAP:  global after 37.98, new after 35.97
 1. 保留异构性：不同 depth / width 导致参数形状、特征维度和模型容量不同。
 2. 降低噪声：所有 agent 使用同一 ConvNet family，减少跨架构迁移带来的不可控因素。
 3. 对齐 DSDM：ConvNet-3/4 + InstanceNorm 更接近 DSDM 常用 evaluator / backbone 口径。
+
+
 ```
 
 ### 实验设定
@@ -276,6 +278,201 @@ DSDM Packet + Logits, IPC=10
 
 实验只改变通信包方法，评价指标和 receiver training 口径保持一致。
 
+### 新要求：
+日期：20260627
+在ConvNet Family 异构 IPC=10的基础上，调整训练模式
+## 任务定位
+
+新增一个通信阶段变体，暂命名为：
+
+Conv-Family Packet Generalist Communication
+
+该任务只调整 communication / receiver training 阶段，不修改前期 expert 训练和 DSDM packet 蒸馏逻辑。
+
+核心目标是把 socialized learning 中的 generalist / feedback 思想迁移到 input-space packet 框架中：
+
+expert agents
+-> distilled packets + sender expert-class logits
+-> packet generalist
+-> generalist logits 反哺 heterogeneous receivers
+
+这里的 generalist 不是服务器，不聚合模型参数，不向 receiver 传 backbone，不使用 full real data。它只是一个由所有 communicated packets 训练出来的 packet-mediated social generalist，用来给 packets 生成额外 logits annotation。
+
+## 总体流程
+
+新增流程如下：
+
+1. 沿用现有 conv-family expert checkpoints、DSDM packets、sender expert-class logits。
+2. 新增阶段 train_packet_generalist：
+   用所有 sender packets 训练一个 conv-family generalist。
+3. 新增阶段 attach_generalist_logits：
+   用 packet generalist 给所有 packet images 生成 generalist logits。
+4. receiver 训练阶段新增 packet_generalist communication mode：
+   第一版沿用现有 receiver 训练口径，即使用 manifest 中的 self packet + external packets 做 packet CE，
+   不额外引入 self real CE，以保证与已完成的 DSDM_LOGIT baseline 可比。
+   在此基础上增加 external sender KD + external generalist KD + FR。
+
+不要破坏现有 direct packet / logit pipeline。packet generalist 应作为可选增强模式存在。
+
+## Generalist 架构要求
+
+1. generalist 使用 conv-family 中当前性能最强的模型架构。
+2. 不要 hard-code 架构名，应通过 config 字段指定，例如：
+
+generalist:
+  enabled: true
+  model: <best_conv_family_model>
+  output_dim: 100
+
+3. 如果当前代码无法自动判断 best conv-family model，则先使用 config 明确指定默认值。
+4. generalist 输出维度固定为 100。
+5. generalist 训练数据只能来自已有 packet images、packet labels、sender logits。
+6. generalist 不允许读取 full CIFAR-100 real training set。
+7. 第一版新建独立 run 目录，但通过 config 中的 reuse.source_run_name 复用已完成 conv-family IPC=10 run 的 DSDM packets，
+   避免重复 expert training 和 DSDM distillation。
+
+## Generalist 训练损失
+
+packet generalist 的训练目标：
+
+L_G = CE(G(x_packet), y_packet)
+    + lambda_skd * KD(G(x_packet)[S_sender], z_sender[S_sender])
+
+其中：
+
+S_sender = sender 的 25 个 expert classes
+z_sender[S_sender] = 已有 sender expert-class logits
+
+sender KD 只在 sender expert classes 上计算，不使用 sender 的 full 100-class logits。
+
+第一版超参数尽量复用现有 logits baseline：
+
+temperature: 沿用当前 KD temperature
+lambda_skd: 沿用当前 sender logits KD 权重，或从 config 显式读取
+
+不要在第一版引入 entropy weighting、margin weighting、动态温度等额外机制。
+
+## Generalist Logits 保存规则
+
+新增 attach_generalist_logits 阶段后，每个 packet sample 应额外保存：
+
+generalist_logits: shape [100]
+generalist_model: 使用的 generalist 架构/ckpt 标识
+
+保留原有字段：
+
+packet image
+global label
+sender id
+sender expert classes
+sender expert-class logits
+
+validate_packets.py 应能检查 generalist logits 是否存在、shape 是否为 100、样本数量是否与 packet 对齐。
+
+## Receiver 训练损失
+
+packet_generalist mode 下 receiver loss 为：
+
+第一版沿用现有 packet-only receiver 训练口径：
+
+L_R = L_CE_packet
+    + lambda_kd  * L_KD_mix_external
+    + lambda_fr  * L_FR
+
+其中：
+
+L_KD_mix_external = (1 - beta) * L_KD_sender_external
+                  + beta       * L_KD_generalist_external
+
+计算边界：
+
+L_KD_sender:
+  只在 external sender packet 上计算；
+  只在 sender expert classes S_sender 上计算。
+
+L_KD_generalist:
+  只在 external sender packet 上计算；
+  第一版使用 full 100-class logits 计算。
+
+L_FR:
+  沿用当前 communication / receiver training 中已有的 FR / retention 设计和 config。
+  不要删除、重命名或绕过 FR。
+
+说明：
+  当前代码中的 L_CE_packet 包含 self packet 和 external packets。
+  本任务第一版不加入 self real CE，后续如需验证 expert retention，可单独新增 self-real retention 变体。
+
+第一版固定或复用：
+
+beta = 0.5
+temperature = 当前 KD temperature
+lambda_kd = 当前 logits baseline 设置
+lambda_fr = 当前 FR 设置
+
+目标是先验证 packet generalist logits 是否带来收益，不要让超参数数量膨胀。
+
+## 实验边界
+
+本任务不是：
+
+1. 重构 DSDM。
+2. 复现完整 MASC。
+3. 引入 server-based FL。
+4. 用 full real data 训练 generalist。
+5. 向 receiver 传递 generalist 参数、backbone、feature 或梯度。
+
+本任务是：
+
+在现有 packet communication 上增加一个 socialized feedback 版本：
+packet images 仍是主要通信载体；
+sender logits 提供局部 expert soft knowledge；
+generalist logits 提供跨 sender 的 global class relation。
+
+## 代码实现要求
+
+1. 尽量复用现有 run_social_pipeline.py。
+2. 新增 stage 建议为：
+
+train_packet_generalist
+attach_generalist_logits
+
+3. receiver 训练新增可选 mode / config，例如：
+
+communication:
+  mode: packet_generalist
+  use_sender_logits: true
+  use_generalist_logits: true
+  kd_mix_beta: 0.5
+
+reuse:
+  source_run_name: cifar100_4agent_25cls_conv_family_ipc10
+  reuse_packets: true
+
+4. 不破坏现有 packet methods：
+
+dsdm
+heuristic
+importance
+full_real
+
+第一版优先支持 dsdm + logits + conv-family。
+
+## 验证要求
+
+实现后至少运行：
+
+python -m py_compile run_social_pipeline.py social_trainer.py packet_logits.py validate_packets.py
+
+并提供 dry-run，不自动启动大规模训练：
+
+python run_social_pipeline.py --config <new_config> --stage train_packet_generalist --dry-run
+python run_social_pipeline.py --config <new_config> --stage attach_generalist_logits --dry-run
+python run_social_pipeline.py --config <new_config> --stage train_receivers --dry-run
+
+如果需要新增配置文件，建议命名为：
+
+configs/main_cifar100_conv_family_packet_generalist.yaml
+
 ### 关键问题
 
 ```text
@@ -295,3 +492,89 @@ DSDM Packet + Logits, IPC=10
 4. 每次修改后运行 py_compile 和 dry-run。
 5. 正式运行前先确认实验计划和输出目录。
 ```
+
+## 2026-06-30 联合 receiver 超参数验证任务
+
+本轮任务目标：
+
+```text
+在不删除、不覆盖既有可用结果的前提下，继续验证 IPC=10 与 IPC=50 的 receiver/social training 超参数。
+```
+
+当前可复用 packet：
+
+```text
+IPC=10 ConvNet family:
+outputs/cifar100_4agent_25cls_conv_family_ipc10
+
+IPC=50 all-ConvNet:
+outputs/cifar100_4agent_25cls_ipc50_allconvnet
+```
+
+本轮不重新运行 DSDM 蒸馏，只复用已有 packet 和 expert checkpoint，执行通信验证阶段：
+
+```text
+1. build_communication
+2. validate_packets
+3. train_receivers
+```
+
+当前最佳点附近继续验证：
+
+```text
+IPC=10:
+以 ep100 / lambda_fr=0.2 / lambda_kd=0.5 为中心，
+重点检查相邻 epoch 与 KD 权重。
+
+IPC=50:
+以 ep500 / lambda_fr=0.05 / lambda_kd=0.5 为中心，
+重点检查 receiver epoch 与 FR 权重。
+```
+
+所有新增实验必须使用新的 run_name，输出到新的 `outputs/` 子目录；已有结果只读复用，不允许删除或覆盖。
+
+## 2026-06-30 19:35 follow-up receiver 调参
+
+当前已完成第一批 refinement 后的最佳候选：
+
+```text
+IPC=10:
+ep060 / lambda_fr=0.20 / lambda_kd=0.50
+mean_global=33.905
+
+IPC=50:
+ep250 / lambda_fr=0.05 / lambda_kd=0.50
+mean_global=46.1825
+```
+
+继续开启第二批 receiver-only follow-up 调参，不重新蒸馏 packet，只复用已有 packet 和 expert checkpoint。
+
+新增队列脚本：
+
+```text
+scripts/run_receiver_followup_tuning.py
+```
+
+新增配置目录：
+
+```text
+configs/receiver_followup_tuning/
+```
+
+本批验证组合：
+
+```text
+IPC=10:
+ep050 / fr=0.20 / kd=0.50
+ep060 / fr=0.15 / kd=0.50
+ep060 / fr=0.25 / kd=0.50
+ep060 / fr=0.20 / kd=0.60
+
+IPC=50:
+ep225 / fr=0.05 / kd=0.50
+ep275 / fr=0.05 / kd=0.50
+ep250 / fr=0.04 / kd=0.50
+ep250 / fr=0.06 / kd=0.50
+```
+
+运行方式采用 `max-jobs=1`，避免和正在运行的 Conv-family IPC=50 蒸馏实验过度抢资源。

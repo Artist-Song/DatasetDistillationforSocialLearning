@@ -1,0 +1,3 @@
+run_name,ipc,method,lambda_fr,lambda_kd,kd_temperature,mean_acc_global_after,mean_acc_new_after,mean_acc_expert_after,mean_forgetting,source_file
+cifar100_4agent_25cls_refine_tuning_followup_ipc10_ep060_fr020_kd060,10,DSDM_LOGIT,0.2,0.6,2.0,34.182500,31.053333,43.570000,23.570000,outputs/cifar100_4agent_25cls_refine_tuning_followup_ipc10_ep060_fr020_kd060/metrics/social_results.csv
+cifar100_4agent_25cls_refine_tuning_followup_ipc50_ep225_fr005_kd050,50,DSDM_LOGIT,0.05,0.5,2.0,46.230000,45.660000,47.940000,17.430000,outputs/cifar100_4agent_25cls_refine_tuning_followup_ipc50_ep225_fr005_kd050/metrics/social_results.csv
