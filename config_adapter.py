@@ -211,12 +211,21 @@ def _apply_model_rules(args):
         args.depth = 3
     if args.net_type == "convnet":
         args.f_idx = str(args.depth - 1)
+    elif args.net_type == "alexnet":
+        # AlexNetCIFAR last_feature = idx7，对应logits前一层[B,512]
+        args.f_idx = "7"
+    elif args.net_type == "vgg":
+        # VGG11-CIFAR last_feature = idx10，对应logits前一层[B,512]
+        args.f_idx = "10"
 
     args.datatag = f"{args.dataset}"
     if args.net_type == "resnet_ap":
         args.modeltag = f"resnet{args.depth}ap"
     elif args.net_type == "convnet":
         args.modeltag = f"conv{args.depth}"
+    elif args.net_type in {"alexnet", "vgg"}:
+        # alexnet/vgg 不依赖depth，modeltag只用架构名
+        args.modeltag = args.net_type
     else:
         args.modeltag = f"{args.net_type}{args.depth}"
     if args.norm_type == "instance":

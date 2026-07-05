@@ -159,17 +159,41 @@ def _refresh_model_metadata(args):
     """根据实际 net_type/depth/width 刷新 DSDM 模型标签和特征层。"""
     if args.net_type == "convnet":
         args.f_idx = str(args.depth - 1)
+    elif args.net_type in {"resnet", "resnet_ap"}:
+        args.f_idx = "4"
+    elif args.net_type == "alexnet":
+        # AlexNetCIFAR last_feature = idx7，对应logits前一层[B,512]
+        args.f_idx = "7"
+    elif args.net_type == "vgg":
+        # VGG11-CIFAR last_feature = idx10，对应logits前一层[B,512]
+        args.f_idx = "10"
     args.datatag = f"{args.dataset}"
     if args.net_type == "resnet_ap":
         args.modeltag = f"resnet{args.depth}ap"
     elif args.net_type == "convnet":
         args.modeltag = f"conv{args.depth}"
+    elif args.net_type in {"alexnet", "vgg"}:
+        # alexnet/vgg 不依赖depth，modeltag只用架构名
+        args.modeltag = args.net_type
     else:
         args.modeltag = f"{args.net_type}{args.depth}"
     if args.norm_type == "instance":
         args.modeltag += "in"
     if args.width != 1.0:
         args.modeltag += f"_w{args.width}"
+
+
+def _refresh_feature_indices(args):
+    """同步 DSDM 特征层索引，避免 per-agent f_idx 更新后 idx_from 仍沿用旧值。"""
+    if getattr(args, "ipc", 0) > 0 and getattr(args, "match", "") == "semantic":
+        f_list = [int(s) for s in str(args.f_idx).split(",")]
+        if len(f_list) == 1:
+            f_list.append(-1)
+        args.idx_from, args.idx_to = f_list
+        args.metric = "mse"
+    else:
+        args.idx_from, args.idx_to = 0, -1
+
 
 def build_agent_args(base_cfg, config_path, agent_id):
     """基于主配置构造单个 agent 的 DSDM args。"""
@@ -189,6 +213,15 @@ def build_agent_args(base_cfg, config_path, agent_id):
     args.norm_type = str(model_cfg.get("norm_type", args.norm_type))
     args.sender_model = args.model_name
     _refresh_model_metadata(args)
+    _refresh_feature_indices(args)
+    # 应用 per-model 蒸馏参数覆盖（lr_img, niter, pretrain_dir）
+    distill_override = model_cfg.get("distillation", {})
+    if distill_override.get("lr_img") is not None:
+        args.lr_img = float(distill_override["lr_img"])
+    if distill_override.get("niter") is not None:
+        args.niter = int(distill_override["niter"])
+    if distill_override.get("pretrain_dir") is not None:
+        args.pretrain_dir = str(distill_override["pretrain_dir"])
     args.save_pretrain_dir = str(get_agent_dir(args, agent_id) / "checkpoints")
     args.save_dir = str(get_agent_dir(args, agent_id) / "checkpoints")
     return args

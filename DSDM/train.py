@@ -12,6 +12,8 @@ import models.resnet as RN
 import models.resnet_ap as RNAP
 import models.convnet as CN
 import models.densenet_cifar as DN
+import models.alexnet_cifar as AN
+import models.vgg_cifar as VN
 from data import load_data, MEANS, STDS
 from misc.utils import random_indices, rand_bbox, AverageMeter, accuracy, get_time, Plotter
 from misc.augment import DiffAug
@@ -65,6 +67,12 @@ def define_model(args, nclass, logger=None, size=None):
                            net_width=width,
                            channel=args.nch,
                            im_size=(args.size, args.size))
+    elif args.net_type == 'alexnet':
+        # AlexNetCIFAR：32x32输入，内部写死BatchNorm，输出维度100
+        model = AN.alexnet_cifar(nclass, nch=args.nch)
+    elif args.net_type == 'vgg':
+        # VGG11-CIFAR：32x32输入，AdaptiveAvgPool，内部写死BatchNorm，输出维度100
+        model = VN.vgg_cifar(nclass, nch=args.nch)
     else:
         raise Exception('unknown network architecture: {}'.format(args.net_type))
 

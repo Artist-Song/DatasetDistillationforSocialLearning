@@ -28,7 +28,15 @@ def _build_balanced_loader(args, images, labels, sender_logits=None, sender_logi
     std = torch.tensor(STDS[args.dataset]).view(1, -1, 1, 1)
     images = (images - mean) / std
     counts = torch.bincount(labels, minlength=get_num_classes(args)).float()
-    weights = torch.tensor([1.0 / max(1.0, counts[int(y)].item()) for y in labels], dtype=torch.float)
+    expert_classes = {int(c) for c in getattr(args, "active_class_ids", [])}
+    self_class_weight = float(getattr(args, "self_class_weight", 1.0))
+    weights = []
+    for label in labels:
+        base_weight = 1.0 / max(1.0, counts[int(label)].item())
+        if int(label) in expert_classes:
+            base_weight *= self_class_weight
+        weights.append(base_weight)
+    weights = torch.tensor(weights, dtype=torch.float)
     sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
     if sender_logits is None and generalist_logits is None:
         dataset = TensorDataset(images.float(), labels.long())
@@ -110,6 +118,36 @@ class SocialTrainer:
         student_log_p = torch.log_softmax(student_logits[mask] / temperature, dim=1)
         return temperature * temperature * nn.functional.kl_div(student_log_p, teacher_p, reduction="batchmean")
 
+    def _build_receiver_scheduler(self, optimizer, receiver_epochs):
+        """按配置构建 receiver 端学习率调度器。"""
+        scheduler_name = str(getattr(self.args, "receiver_scheduler", "none")).lower()
+        if scheduler_name in {"", "none"}:
+            return None
+        if scheduler_name == "multistep":
+            milestones = getattr(self.args, "receiver_scheduler_milestones", None)
+            if not milestones:
+                milestones = [int(0.65 * receiver_epochs), int(0.85 * receiver_epochs)]
+            milestones = [max(1, int(v)) for v in milestones]
+            gamma = float(getattr(self.args, "receiver_scheduler_gamma", 0.2))
+            return optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=gamma)
+        if scheduler_name == "cosine":
+            return optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=int(receiver_epochs))
+        raise ValueError(f"不支持的 receiver scheduler: {scheduler_name}")
+
+    def _current_loss_weights(self, epoch, receiver_epochs, base_lambda_fr, base_lambda_kd):
+        """根据可选两段式 schedule 返回当前 FR/KD 权重。"""
+        schedule = str(getattr(self.args, "lambda_schedule", "none")).lower()
+        if schedule in {"", "none"}:
+            return base_lambda_fr, base_lambda_kd
+        if schedule != "late_fr":
+            raise ValueError(f"不支持的 lambda_schedule: {schedule}")
+        switch_ratio = float(getattr(self.args, "lambda_schedule_switch", 0.7))
+        if epoch < int(receiver_epochs * switch_ratio):
+            return base_lambda_fr, base_lambda_kd
+        fr_multiplier = float(getattr(self.args, "lambda_fr_late_multiplier", 1.5))
+        kd_multiplier = float(getattr(self.args, "lambda_kd_late_multiplier", 0.7))
+        return base_lambda_fr * fr_multiplier, base_lambda_kd * kd_multiplier
+
     def train(self):
         """执行 receiver 二轮训练并返回结果指标。"""
         model_old, model_new = self._build_models()
@@ -151,11 +189,12 @@ class SocialTrainer:
         receiver_epochs = int(getattr(self.args, "receiver_epochs", self.args.epochs))
         init_mode = getattr(self.args, "init_mode", "expert")
         use_fr = bool(getattr(self.args, "use_fr", init_mode == "expert"))
-        lambda_fr = float(getattr(self.args, "lambda_fr", 0.05)) if use_fr else 0.0
+        base_lambda_fr = float(getattr(self.args, "lambda_fr", 0.05)) if use_fr else 0.0
         self.kd_temperature = float(getattr(self.args, "kd_temperature", 2.0))
-        lambda_kd = float(getattr(self.args, "lambda_kd", 0.0)) if (use_logits or use_generalist_logits) else 0.0
+        base_lambda_kd = float(getattr(self.args, "lambda_kd", 0.0)) if (use_logits or use_generalist_logits) else 0.0
         kd_mix_beta = float(getattr(self.args, "kd_mix_beta", 0.5)) if use_generalist_logits else 0.0
         optimizer = optim.SGD(model_new.parameters(), lr=receiver_lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
+        scheduler = self._build_receiver_scheduler(optimizer, receiver_epochs)
         criterion = nn.CrossEntropyLoss()
         last_cls = 0.0
         last_fr = 0.0
@@ -163,7 +202,8 @@ class SocialTrainer:
         last_sender_kd = 0.0
         last_generalist_kd = 0.0
         model_new.train()
-        for _ in range(receiver_epochs):
+        for epoch in range(receiver_epochs):
+            lambda_fr, lambda_kd = self._current_loss_weights(epoch, receiver_epochs, base_lambda_fr, base_lambda_kd)
             for batch in loader:
                 if use_logits and use_generalist_logits:
                     batch_images, batch_labels, batch_teacher_logits, batch_teacher_class_ids, batch_generalist_logits, batch_sender_agents = batch
@@ -219,6 +259,8 @@ class SocialTrainer:
                 last_kd = float(loss_kd.detach().cpu())
                 last_sender_kd = float(loss_sender_kd.detach().cpu())
                 last_generalist_kd = float(loss_generalist_kd.detach().cpu())
+            if scheduler is not None:
+                scheduler.step()
         torch.save(model_new.state_dict(), checkpoint_dir / "after_social.pt")
         after = evaluate_receiver_model(self.args, model_new, self.receiver_agent, self.device)
         external_raw = sum(p["raw_images"] for p in packets if p["sender_agent"] != self.receiver_agent)
@@ -247,12 +289,12 @@ class SocialTrainer:
             "method": method,
             "init_mode": init_mode,
             "use_fr": str(use_fr).lower(),
-            "lambda_fr": lambda_fr,
+            "lambda_fr": base_lambda_fr,
             "use_logits": str(use_logits).lower(),
             "communication_mode": getattr(self.args, "communication_mode", "direct"),
             "use_generalist_logits": str(use_generalist_logits).lower(),
             "kd_mix_beta": kd_mix_beta,
-            "lambda_kd": lambda_kd,
+            "lambda_kd": base_lambda_kd,
             "kd_temperature": self.kd_temperature,
             "ipc": int(self.args.ipc),
             "external_comm_images": int(external_raw),

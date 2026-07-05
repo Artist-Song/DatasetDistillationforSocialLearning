@@ -104,6 +104,165 @@ VARIANTS = [
         "lambda_kd": 0.5,
         "temperature": 2.0,
     },
+    {
+        "tag": "ipc10_ep055_fr020_kd060_t2",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 55,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+    },
+    {
+        "tag": "ipc10_ep065_fr020_kd060_t2",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 65,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t1",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 1.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t3",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 3.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t4",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 4.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr025_kd060_t2",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.25,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr030_kd060_t2",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.3,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd070_t3",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.7,
+        "temperature": 3.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t2_sched",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+        "scheduler": "multistep",
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t3_sched",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 3.0,
+        "scheduler": "multistep",
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t2_self15",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+        "self_class_weight": 1.5,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t2_self20",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+        "self_class_weight": 2.0,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t2_sched_self15",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+        "scheduler": "multistep",
+        "self_class_weight": 1.5,
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t2_latesched",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+        "lambda_schedule": "late_fr",
+    },
+    {
+        "tag": "ipc10_ep060_fr020_kd060_t2_sched_latesched",
+        "base": IPC10_BASE,
+        "source_run": "cifar100_4agent_25cls_conv_family_ipc10",
+        "epochs": 60,
+        "lr": 0.01,
+        "lambda_fr": 0.2,
+        "lambda_kd": 0.6,
+        "temperature": 2.0,
+        "scheduler": "multistep",
+        "lambda_schedule": "late_fr",
+    },
 ]
 
 
@@ -145,6 +304,22 @@ def build_config(variant: dict) -> Path:
     cfg["social_learning"]["receiver"]["epochs"] = variant["epochs"]
     cfg["social_learning"]["receiver"]["lr"] = variant["lr"]
     cfg["social_learning"]["receiver"]["lambda_fr"] = variant["lambda_fr"]
+    if "scheduler" in variant:
+        cfg["social_learning"]["receiver"]["scheduler"] = variant["scheduler"]
+        cfg["social_learning"]["receiver"]["scheduler_gamma"] = variant.get("scheduler_gamma", 0.2)
+        cfg["social_learning"]["receiver"]["scheduler_milestones"] = variant.get(
+            "scheduler_milestones",
+            [int(0.65 * variant["epochs"]), int(0.85 * variant["epochs"])],
+        )
+    if "self_class_weight" in variant:
+        cfg["social_learning"]["receiver"]["self_class_weight"] = variant["self_class_weight"]
+    if "lambda_schedule" in variant:
+        cfg["social_learning"]["receiver"]["lambda_schedule"] = variant["lambda_schedule"]
+        cfg["social_learning"]["receiver"]["lambda_schedule_switch"] = variant.get("lambda_schedule_switch", 0.7)
+        cfg["social_learning"]["receiver"]["lambda_fr_late_multiplier"] = variant.get("lambda_fr_late_multiplier", 1.5)
+        cfg["social_learning"]["receiver"]["lambda_kd_late_multiplier"] = variant.get("lambda_kd_late_multiplier", 0.7)
+    if "batch_size" in variant:
+        cfg.setdefault("evaluation", {})["batch_size"] = variant["batch_size"]
     cfg.setdefault("logits", {})
     cfg["logits"]["enabled"] = True
     cfg["logits"]["lambda_kd"] = variant["lambda_kd"]
