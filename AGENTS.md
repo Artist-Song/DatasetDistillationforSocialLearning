@@ -303,6 +303,68 @@ factor = 2
 external_comm_images = 3750
 ```
 
+## DSDM feature index 规则
+
+DSDM 的 `f_idx` / `idx_from` 语义应理解为：
+
+```text
+选择 sender guide model 的深层语义特征做 synthetic image matching。
+```
+
+当前研究口径下，默认应取“最后一个非 logits 的语义特征层”，而不是固定使用某个硬编码层号。不同模型的 feature index 不一致，必须按模型结构显式确认：
+
+```text
+ConvNet-3:
+  idx 0 = block1 output
+  idx 1 = block2 output
+  idx 2 = block3 output = 最后一层特征
+
+ConvNet-4:
+  idx 0 = block1 output
+  idx 1 = block2 output
+  idx 2 = block3 output
+  idx 3 = block4 output = 最后一层特征
+
+ResNet / ResNet_AP:
+  idx 0 = layer0
+  idx 1 = layer1
+  idx 2 = layer2
+  idx 3 = layer3
+  idx 4 = layer4 = 最后 residual feature map
+  idx 5 = avgpool 后 penultimate vector
+  idx 6 = logits
+```
+
+因此推荐规则是：
+
+```text
+ConvNet-3      -> idx_from = 2
+ConvNet-4      -> idx_from = 3
+ResNet-10      -> idx_from = 4
+ResNetAP-10    -> idx_from = 4
+```
+
+如果实验明确要匹配分类器前向量，可单独使用 ResNet / ResNetAP 的 `idx_from = 5`，但不能和默认 image-packet 主实验混为一组。
+
+注意：DSDM 实际蒸馏使用的是 `args.idx_from / args.idx_to`，不是单独显示的 `args.f_idx`。如果在 per-agent model config 中根据 depth / family 刷新了 `f_idx`，必须同步刷新 `idx_from / idx_to`，否则日志或 dry-run 里看到的 `f_idx` 正确也不代表实际匹配层正确。
+
+截至 2026-07-03 已确认：
+
+```text
+1. 旧跨架构 hetero CIFAR-100 IPC=50 中，ResNet / ResNetAP sender 使用 idx_from=2，
+   这实际对应 ResNet layer2，不是最后语义层，可能是 ResNet packet 异常的重要原因之一。
+
+2. 当前正在运行的 Conv-family IPC=50 DSDM 蒸馏中：
+   agent_0 ConvNet-3-w0.5 使用 idx_from=2，逻辑正确；
+   agent_1 ConvNet-3-w1.0 使用 idx_from=2，逻辑正确；
+   agent_2 ConvNet-4-w1.0 实际仍使用 idx_from=2，属于旧 feature-index baseline；
+   agent_3 ConvNet-4-w1.5 实际仍使用 idx_from=2，属于旧 feature-index baseline。
+
+3. 当前运行中的 Conv-family IPC=50 结果先保留为旧逻辑 baseline；
+   后续优先只给 agent_2 / agent_3 补跑 last-feature 版本即可，
+   即 ConvNet-4 sender 使用 idx_from=3。
+```
+
 ## logits 规则
 
 logits 是增强模块，不是第一层研究动机。
@@ -339,6 +401,12 @@ logits 的作用是：
 5. agent 2 存在严重 expert forgetting。
 6. 旧 ResNet / ResNetAP upper-bound 过低由 recipe 导致；修正后 ResNet-10 / ResNetAP-10 上界恢复到 72%+。
 7. ConvNet-3-IN 按严格 DSDM recipe 上界为 65.24，高于旧训练 recipe 的 50.89。
+8. 2026-07-03 发现 DSDM feature-index 诊断问题：
+   ResNet / ResNetAP 不应默认沿用 idx_from=2；
+   ConvNet-4 也应使用 idx_from=3 才是最后特征层。
+9. Conv-all DSDM_LOGIT packet 复用到 hetero receivers 后，
+   agent2 ResNet 的 expert acc 从原 hetero packet 的约 0.8% 恢复到 33.68%，
+   支持“原 hetero packet 图像分布/feature-index/蒸馏端问题”是异常主因之一。
 ```
 
 当前不能直接声称：
@@ -363,6 +431,10 @@ IPC=50 对 CIFAR-100 来说通信预算相对较高，真实样本随机子集�
 6. 每次修改后至少运行 py_compile 和 dry-run。
 7. 可以按用户本次要求提交并 push 指导文件和实验代码。
 8. 不要强制 reset、rebase、clean，除非用户明确要求。
+9.修改前要告诉用户修改的逻辑与方案
+10. 修改 DSDM feature-index 逻辑时，必须同时验证 `f_idx` 与 `idx_from / idx_to`，
+    并用 dry-run 或小脚本打印每个 agent 的最终解析值；
+    仅修改配置里的 `f_idx` 不足以保证实际蒸馏层改变。
 
 ## 推荐 smoke test
 
