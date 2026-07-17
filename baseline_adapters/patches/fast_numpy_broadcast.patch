@@ -1,0 +1,13 @@
+diff --git a/modules/minmax_distiller.py b/modules/minmax_distiller.py
+--- a/modules/minmax_distiller.py
++++ b/modules/minmax_distiller.py
+@@ -303,7 +303,8 @@ class MinMaxDistiller:
+         if use_graph:
+             degrees = np.array(self.A.sum(axis=1)).ravel()
+             finite_mask = np.isfinite(cost_matrix)
+-            cost_matrix[finite_mask] = cost_matrix[finite_mask] / (degrees[None, :][finite_mask] + 1e-8)
++            degree_matrix = np.broadcast_to(degrees[None, :], cost_matrix.shape)
++            cost_matrix[finite_mask] = cost_matrix[finite_mask] / (degree_matrix[finite_mask] + 1e-8)
+
+         row_ind, col_ind = linear_sum_assignment(cost_matrix)
+         pi = col_ind.astype(np.int64)

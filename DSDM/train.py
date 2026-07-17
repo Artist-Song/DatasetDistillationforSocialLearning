@@ -40,13 +40,15 @@ def define_model(args, nclass, logger=None, size=None):
     if size == None:
         size = args.size
 
-    if args.net_type == 'resnet':
+    if args.net_type in {'resnet', 'resnet_cifar_standard'}:
+        cifar_base_width = 64 if args.net_type == 'resnet_cifar_standard' else 32
         model = RN.ResNet(args.dataset,
                           args.depth,
                           nclass,
                           norm_type=args.norm_type,
                           size=size,
-                          nch=args.nch)
+                          nch=args.nch,
+                          cifar_base_width=cifar_base_width)
     elif args.net_type == 'resnet_ap':
         model = RNAP.ResNetAP(args.dataset,
                               args.depth,

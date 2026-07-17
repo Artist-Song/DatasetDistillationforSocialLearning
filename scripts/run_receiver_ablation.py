@@ -68,6 +68,7 @@ def main() -> None:
     parser.add_argument("--config", required=True)
     parser.add_argument("--packet-method", default="dsdm")
     parser.add_argument("--init-mode", default="expert")
+    parser.add_argument("--only-receiver", type=int, default=None, help="只训练指定 receiver agent")
     args_cli = parser.parse_args()
 
     cfg = load_config(args_cli.config)
@@ -78,7 +79,7 @@ def main() -> None:
     py = sys.executable
     run([py, "run_social_pipeline.py", "--config", args_cli.config, "--stage", "build_communication", "--packet-method", args_cli.packet_method])
     run([py, "validate_packets.py", "--config", args_cli.config, "--packet-method", args_cli.packet_method])
-    run([
+    train_cmd = [
         py,
         "run_social_pipeline.py",
         "--config",
@@ -89,7 +90,10 @@ def main() -> None:
         args_cli.packet_method,
         "--init-mode",
         args_cli.init_mode,
-    ])
+    ]
+    if args_cli.only_receiver is not None:
+        train_cmd.extend(["--only-receiver", str(args_cli.only_receiver)])
+    run(train_cmd)
     run([py, "scripts/update_experiment_registry.py"])
 
 

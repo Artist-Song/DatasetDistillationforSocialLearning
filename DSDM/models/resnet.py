@@ -125,7 +125,8 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, dataset, depth, num_classes, norm_type='batch', size=-1, nch=3):
+    def __init__(self, dataset, depth, num_classes, norm_type='batch', size=-1, nch=3,
+                 cifar_base_width=32):
         super(ResNet, self).__init__()
         self.dataset = dataset
         self.norm_type = norm_type
@@ -139,17 +140,21 @@ class ResNet(nn.Module):
 
         # print(f"ResNet-{depth}-{self.net_size} norm: {self.norm_type}")
         if self.dataset.startswith('cifar'):
-            self.inplanes = 32
+            base_width = int(cifar_base_width)
+            if base_width <= 0:
+                raise ValueError('cifar_base_width must be positive')
+            self.cifar_base_width = base_width
+            self.inplanes = base_width
             n = int((depth - 2) / 6)
             block = BasicBlock
 
             self.layer0 = IntroBlock(self.net_size, self.inplanes, norm_type, nch=nch)
-            self.layer1 = self._make_layer(block, 32, n, stride=1)
-            self.layer2 = self._make_layer(block, 64, n, stride=2)
-            self.layer3 = self._make_layer(block, 128, n, stride=2)
-            self.layer4 = self._make_layer(block, 256, n, stride=2)
+            self.layer1 = self._make_layer(block, base_width, n, stride=1)
+            self.layer2 = self._make_layer(block, base_width * 2, n, stride=2)
+            self.layer3 = self._make_layer(block, base_width * 4, n, stride=2)
+            self.layer4 = self._make_layer(block, base_width * 8, n, stride=2)
             self.avgpool = nn.AvgPool2d(4)
-            self.fc = nn.Linear(256 * block.expansion, num_classes)
+            self.fc = nn.Linear(base_width * 8 * block.expansion, num_classes)
 
         else:
             blocks = {

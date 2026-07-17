@@ -1,6 +1,14 @@
 from collections import defaultdict
+import importlib
+import importlib.util
+import sys
+from pathlib import Path
 
+import numpy as np
 import torch
+
+
+FAST_OFFICIAL_COMMIT = "6a218fcfdc93838634921399b0de6a36cdd29756"
 
 
 def _get_target(train_set, index):
@@ -89,6 +97,135 @@ def build_importance_packet(args, train_set, guide_models):
         selected.extend([candidates[i] for i in order[: args.ipc]])
     images, labels = _stack_samples(train_set, selected)
     return images, labels, class_ids
+
+
+def _load_fast_official_selector(repo_path):
+    """以独立包名加载 FAST 官方核心，避免与其他仓库的 modules 包冲突。"""
+    modules_dir = Path(repo_path).resolve() / "modules"
+    init_path = modules_dir / "__init__.py"
+    if not init_path.exists():
+        raise FileNotFoundError(f"缺少 FAST 官方源码: {init_path}")
+
+    package_name = "_fast_official_modules"
+    if package_name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            package_name,
+            init_path,
+            submodule_search_locations=[str(modules_dir)],
+        )
+        if spec is None or spec.loader is None:
+            raise ImportError(f"无法加载 FAST 官方源码: {init_path}")
+        package = importlib.util.module_from_spec(spec)
+        sys.modules[package_name] = package
+        spec.loader.exec_module(package)
+    module = importlib.import_module(f"{package_name}.per_class")
+    return module.run_per_class_selection
+
+
+def _validate_fast_positions(positions, num_candidates, ipc, class_id):
+    """检查 FAST 返回的类内索引满足精确 IPC、唯一性和范围约束。"""
+    positions = np.asarray(positions, dtype=np.int64).reshape(-1)
+    if positions.size != int(ipc):
+        raise ValueError(f"FAST class {class_id} 返回 {positions.size} 张，期望 IPC={ipc}")
+    if np.unique(positions).size != positions.size:
+        raise ValueError(f"FAST class {class_id} 返回了重复索引")
+    if positions.size and (positions.min() < 0 or positions.max() >= int(num_candidates)):
+        raise ValueError(f"FAST class {class_id} 返回了越界索引")
+    return positions
+
+
+def _fast_cache_path(args, class_id):
+    cache_root = Path(
+        getattr(args, "fast_cache_root", "external_baselines/outputs/fast_cache")
+    )
+    commit = str(getattr(args, "fast_commit", FAST_OFFICIAL_COMMIT))[:12]
+    return (
+        cache_root
+        / f"{args.dataset}_pixels_{commit}"
+        / f"ipc{int(args.ipc)}"
+        / f"class_{int(class_id):03d}.npz"
+    )
+
+
+def _select_fast_class_positions(args, class_id, class_images):
+    """运行 FAST 官方 per-class/pixels/minmax 选择并缓存类内索引。"""
+    num_candidates = int(class_images.shape[0])
+    cache_path = _fast_cache_path(args, class_id)
+    if cache_path.exists():
+        with np.load(cache_path, allow_pickle=False) as cached:
+            if int(cached["num_candidates"]) != num_candidates:
+                raise ValueError(f"FAST cache 样本数不匹配: {cache_path}")
+            positions = cached["selected_positions"]
+        return _validate_fast_positions(positions, num_candidates, args.ipc, class_id), cache_path, True
+
+    repo_path = getattr(args, "fast_repo_path", "external_baselines/repos/FAST")
+    selector = _load_fast_official_selector(repo_path)
+    images_np = class_images.detach().cpu().numpy().astype(np.float32, copy=False)
+    x_pixels = images_np.reshape(num_candidates, -1)
+    y_class = np.full(num_candidates, int(class_id), dtype=np.int64)
+    algorithm_seed = int(getattr(args, "fast_seed", 0))
+    np.random.seed(algorithm_seed)
+    selected, _, _ = selector(
+        X=x_pixels,
+        y_all=y_class,
+        retain_ratio=float(args.ipc) / float(num_candidates),
+        method="minmax",
+        rff=None,
+        stage2_mmd=0.0,
+        per_class_retain_ratio=float(args.ipc) / float(num_candidates),
+        min_samples_per_class=int(args.ipc),
+        outdir=None,
+        save_stage_files=False,
+        verbose=False,
+        viz_manager=None,
+    )
+    positions = _validate_fast_positions(selected, num_candidates, args.ipc, class_id)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        cache_path,
+        selected_positions=positions,
+        class_id=np.int64(class_id),
+        num_candidates=np.int64(num_candidates),
+        ipc=np.int64(args.ipc),
+        algorithm_seed=np.int64(algorithm_seed),
+        fast_commit=np.asarray(str(getattr(args, "fast_commit", FAST_OFFICIAL_COMMIT))),
+        x_source=np.asarray("pixels"),
+    )
+    return positions, cache_path, False
+
+
+def build_fast_packet(args, train_set):
+    """用 FAST 官方 pixels/per-class/minmax 模式选择真实图 packet。"""
+    indices_by_class = _collect_indices_by_class(train_set)
+    class_ids = sorted(indices_by_class.keys())
+    selected = []
+    cache_hits = 0
+    cache_paths = []
+    for class_id in class_ids:
+        candidates = indices_by_class[class_id]
+        if len(candidates) < int(args.ipc):
+            raise ValueError(f"class {class_id} 只有 {len(candidates)} 张，无法选择 IPC={args.ipc}")
+        class_images, _ = _stack_samples(train_set, candidates)
+        positions, cache_path, cache_hit = _select_fast_class_positions(args, class_id, class_images)
+        selected.extend(candidates[int(position)] for position in positions)
+        cache_paths.append(str(cache_path))
+        cache_hits += int(cache_hit)
+
+    images, labels = _stack_samples(train_set, selected)
+    dataset_indices = [
+        int(train_set.indices[index]) if hasattr(train_set, "indices") else int(index)
+        for index in selected
+    ]
+    meta = {
+        "selector": "FAST",
+        "official_commit": str(getattr(args, "fast_commit", FAST_OFFICIAL_COMMIT)),
+        "official_mode": "pixels/per_class/minmax",
+        "algorithm_seed": int(getattr(args, "fast_seed", 0)),
+        "selected_dataset_indices": dataset_indices,
+        "cache_hits": cache_hits,
+        "cache_entries": len(cache_paths),
+    }
+    return images, labels, class_ids, meta
 
 
 def build_full_real_packet(args, train_set):

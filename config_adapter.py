@@ -48,6 +48,10 @@ DSDM_DEFAULT_ARGS = {
     "cov_weight": 50.0,
     "h_p_weight": 0.2,
     "smooth_factor": 0.99,
+    "pcbn_enabled": False,
+    "pcbn_weight": 0.0,
+    "pcbn_layers": "all",
+    "pcbn_normalize_layers": True,
     "epochs": 1500,
     "ipc": 10,
     "factor": 2,
@@ -62,6 +66,7 @@ DSDM_DEFAULT_ARGS = {
     "niter": 10000,
     "smooth_iter": 2000,
     "evaluate_iter": 100,
+    "evaluate_iterations": [100, 500, 1000, 2000, 3000, 5000, 7500, 10000],
     "batch_real": 256,
     "batch_syn_max": 256,
     "lr_img": 0.1,
@@ -86,6 +91,10 @@ DSDM_DEFAULT_ARGS = {
     "run_name": "cifar10_dsdm_ipc10",
     "config_path": None,
     "save_dir": "./results/cifar10/conv3in_semantic_mse_cut_factor2_lr0.1_mix_ipc10",
+    "fast_repo_path": "external_baselines/repos/FAST",
+    "fast_cache_root": "external_baselines/outputs/fast_cache",
+    "fast_commit": "6a218fcfdc93838634921399b0de6a36cdd29756",
+    "fast_seed": 0,
 }
 
 
@@ -168,6 +177,31 @@ def _remove_aug(augtype, remove_aug):
     return "_".join(aug_list)
 
 
+def _as_bool(value):
+    """把配置里的布尔值安全转成 bool。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def apply_pcbn_overrides(args, pcbn_cfg):
+    """将 PCBN 可选正则配置写入 DSDM args。"""
+    if not isinstance(pcbn_cfg, dict):
+        return
+    if "enabled" in pcbn_cfg:
+        args.pcbn_enabled = _as_bool(pcbn_cfg["enabled"])
+    if "weight" in pcbn_cfg:
+        args.pcbn_weight = float(pcbn_cfg["weight"])
+    if "layers" in pcbn_cfg:
+        args.pcbn_layers = pcbn_cfg["layers"]
+    if "normalize_layers" in pcbn_cfg:
+        args.pcbn_normalize_layers = _as_bool(pcbn_cfg["normalize_layers"])
+    if "enabled" not in pcbn_cfg and float(getattr(args, "pcbn_weight", 0.0)) > 0:
+        args.pcbn_enabled = True
+
+
 def _apply_dataset_rules(args):
     """补齐 DSDM 原参数脚本中的数据集派生字段。"""
     args.nch = 3
@@ -217,6 +251,11 @@ def _apply_model_rules(args):
     elif args.net_type == "vgg":
         # VGG11-CIFAR last_feature = idx10，对应logits前一层[B,512]
         args.f_idx = "10"
+    elif args.net_type in {"resnet", "resnet_cifar_standard", "resnet_ap"}:
+        # ResNet特征索引：0=layer0,1=layer1,2=layer2,3=layer3,4=layer4(空间),
+        # 5=avgpool+flatten(penultimate向量,logits前一层),6=logits
+        # 用户要求取logits前一层，即idx=5
+        args.f_idx = "5"
 
     args.datatag = f"{args.dataset}"
     if args.net_type == "resnet_ap":
@@ -226,6 +265,8 @@ def _apply_model_rules(args):
     elif args.net_type in {"alexnet", "vgg"}:
         # alexnet/vgg 不依赖depth，modeltag只用架构名
         args.modeltag = args.net_type
+    elif args.net_type == "resnet_cifar_standard":
+        args.modeltag = f"resnet{args.depth}_cifar_w1"
     else:
         args.modeltag = f"{args.net_type}{args.depth}"
     if args.norm_type == "instance":
@@ -263,6 +304,12 @@ def _apply_config_overrides(args, cfg):
     distill = cfg.get("distillation", {})
     evaluation = cfg.get("evaluation", {})
     runtime = cfg.get("runtime", {})
+    fast_cfg = cfg.get("selection", {}).get("fast", {})
+    pcbn_cfg = {}
+    if isinstance(cfg.get("pcbn"), dict):
+        pcbn_cfg.update(cfg.get("pcbn"))
+    if isinstance(distill.get("pcbn"), dict):
+        pcbn_cfg.update(distill.get("pcbn"))
 
     args.output_root = project.get("output_root", args.output_root)
     args.run_name = project.get("run_name", args.run_name)
@@ -299,6 +346,8 @@ def _apply_config_overrides(args, cfg):
         "metric",
         "f_idx",
         "niter",
+        "evaluate_iter",
+        "evaluate_iterations",
         "lr_img",
         "mom_img",
         "batch_real",
@@ -311,6 +360,8 @@ def _apply_config_overrides(args, cfg):
         if key in distill:
             setattr(args, key, distill[key])
 
+    apply_pcbn_overrides(args, pcbn_cfg)
+
     args.epochs = evaluation.get("epochs", args.epochs)
     args.batch_size = evaluation.get("batch_size", args.batch_size)
     args.repeat = evaluation.get("repeat", args.repeat)
@@ -318,6 +369,10 @@ def _apply_config_overrides(args, cfg):
     args.workers = runtime.get("workers", args.workers)
     args.device = runtime.get("device", args.device)
     args.gpu_id = runtime.get("gpu_id", args.gpu_id)
+    args.fast_repo_path = fast_cfg.get("repo_path", args.fast_repo_path)
+    args.fast_cache_root = fast_cfg.get("cache_root", args.fast_cache_root)
+    args.fast_commit = fast_cfg.get("commit", args.fast_commit)
+    args.fast_seed = int(fast_cfg.get("seed", args.fast_seed))
 
 
 def build_dsdm_args_from_config(cfg, config_path=None):

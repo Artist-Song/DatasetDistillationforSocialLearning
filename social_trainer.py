@@ -51,6 +51,39 @@ def _build_balanced_loader(args, images, labels, sender_logits=None, sender_logi
     return DataLoader(dataset, batch_size=args.batch_size, sampler=sampler, num_workers=0)
 
 
+def _augment_cifar_batch(images, args):
+    """对已归一化的 CIFAR batch 应用逐样本 crop/flip。"""
+    if not bool(getattr(args, "receiver_augment", False)):
+        return images
+    if str(getattr(args, "dataset", "")).lower() not in {"cifar10", "cifar100"}:
+        return images
+    _ensure_dsdm_path()
+    from data import MEANS, STDS
+
+    padding = 4
+    batch, channels, height, width = images.shape
+    mean = torch.tensor(MEANS[args.dataset], device=images.device, dtype=images.dtype)
+    std = torch.tensor(STDS[args.dataset], device=images.device, dtype=images.dtype)
+    raw_zero = (-mean / std).view(1, channels, 1, 1)
+    padded = raw_zero.expand(batch, channels, height + 2 * padding, width + 2 * padding).clone()
+    padded[:, :, padding:padding + height, padding:padding + width] = images
+    augmented = torch.empty_like(images)
+    offsets = torch.randint(0, 2 * padding + 1, (batch, 2), device=images.device)
+    for index in range(batch):
+        top, left = offsets[index].tolist()
+        augmented[index] = padded[index, :, top:top + height, left:left + width]
+    flip_mask = torch.rand(batch, device=images.device) < 0.5
+    augmented[flip_mask] = torch.flip(augmented[flip_mask], dims=(-1,))
+    return augmented
+
+
+def _freeze_batchnorm_stats(model):
+    """冻结 BatchNorm running statistics，同时保留 affine 参数可训练。"""
+    for module in model.modules():
+        if isinstance(module, nn.modules.batchnorm._BatchNorm):
+            module.eval()
+
+
 class SocialTrainer:
     """负责 receiver agent 的二轮社会化学习。"""
 
@@ -63,7 +96,15 @@ class SocialTrainer:
         self.class_split = get_agent_class_split(args)
         self.model_split = get_agent_model_split(args)
         self.expert_classes = self.class_split[self.receiver_agent]
-        self.device = torch.device("cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu")
+        if args.device == "cuda" and torch.cuda.is_available():
+            gpu_id = int(getattr(args, "gpu_id", 0) or 0)
+            if gpu_id >= torch.cuda.device_count():
+                raise ValueError(f"配置 gpu_id={gpu_id}，但当前只检测到 {torch.cuda.device_count()} 张 GPU")
+            # DSDM/train.py 内部存在 device='cuda'，这里先设置当前 GPU，保证导入后落到目标卡。
+            torch.cuda.set_device(gpu_id)
+            self.device = torch.device(f"cuda:{gpu_id}")
+        else:
+            self.device = torch.device("cpu")
 
     def _build_models(self):
         """构建 before/after 模型并加载 receiver expert 权重。"""
@@ -95,6 +136,66 @@ class SocialTrainer:
             old_logits = model_old(images[mask])[:, class_index]
         new_logits = model_new(images[mask])[:, class_index]
         return nn.functional.mse_loss(new_logits, old_logits)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # 改进 Loss 方法（新增，不修改原有方法）
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _get_penultimate_feature(self, model, images):
+        """提取 penultimate 特征向量，兼容 ConvNet/VGG/AlexNet/ResNet 的不同返回格式。"""
+        f_idx = int(getattr(self.args, "idx_from", 2))
+        result = model.get_feature(images, f_idx, f_idx)
+        # VGG 返回 (list, None)，其他返回 list
+        if isinstance(result, tuple):
+            result = result[0]
+        feat = result[0] if isinstance(result, list) else result
+        # 展平为 [B, D]
+        if feat.dim() > 2:
+            feat = feat.reshape(feat.size(0), -1)
+        return feat
+
+    def _compute_fr_loss_kl(self, model_old, model_new, images, labels):
+        """KL 散度版 FR loss：约束 expert 类概率分布，不受 logit 尺度影响。
+        用法：config 中设 fr_loss_type: 'kl'"""
+        mask = torch.zeros_like(labels, dtype=torch.bool)
+        for class_id in self.expert_classes:
+            mask |= labels == int(class_id)
+        if not mask.any():
+            return torch.tensor(0.0, device=self.device)
+        class_index = torch.tensor(self.expert_classes, device=self.device, dtype=torch.long)
+        temperature = float(getattr(self.args, "fr_kl_temperature", 2.0))
+        with torch.no_grad():
+            old_logits = model_old(images[mask])[:, class_index]
+        new_logits = model_new(images[mask])[:, class_index]
+        old_p = torch.softmax(old_logits / temperature, dim=1)
+        new_log_p = torch.log_softmax(new_logits / temperature, dim=1)
+        return temperature * temperature * nn.functional.kl_div(new_log_p, old_p, reduction="batchmean")
+
+    def _compute_fr_feat_loss(self, model_old, model_new, images, labels):
+        """特征层余弦一致性 FR：约束中间层方向，防止浅层漂移导致遗忘。
+        用法：config 中设 use_fr_feat: true"""
+        mask = torch.zeros_like(labels, dtype=torch.bool)
+        for class_id in self.expert_classes:
+            mask |= labels == int(class_id)
+        if not mask.any():
+            return torch.tensor(0.0, device=self.device)
+        imgs_expert = images[mask]
+        with torch.no_grad():
+            old_feat = self._get_penultimate_feature(model_old, imgs_expert)
+        new_feat = self._get_penultimate_feature(model_new, imgs_expert)
+        cos_sim = nn.functional.cosine_similarity(new_feat, old_feat, dim=1)
+        return 1.0 - cos_sim.mean()
+
+    def _compute_self_kd_loss(self, model_old, model_new, images):
+        """全 batch 自蒸馏：用旧模型对所有数据做软标签约束，防止自身知识退化。
+        用法：config 中设 use_self_kd: true"""
+        temperature = float(getattr(self.args, "self_kd_temperature", 2.0))
+        with torch.no_grad():
+            old_logits = model_old(images)
+        new_logits = model_new(images)
+        old_p = torch.softmax(old_logits / temperature, dim=1)
+        new_log_p = torch.log_softmax(new_logits / temperature, dim=1)
+        return temperature * temperature * nn.functional.kl_div(new_log_p, old_p, reduction="batchmean")
 
     def _compute_kd_loss(self, student_logits, teacher_logits, teacher_class_ids, sender_agents):
         """只对 external sender packet 计算 temperature KL KD。"""
@@ -170,6 +271,7 @@ class SocialTrainer:
             self.manifest_rows,
             require_logits=use_logits,
             require_generalist_logits=use_generalist_logits,
+            receiver_agent=self.receiver_agent,
         )
         packets = consumed["packets"]
         if use_logits and consumed["sender_logits"] is None:
@@ -193,6 +295,12 @@ class SocialTrainer:
         self.kd_temperature = float(getattr(self.args, "kd_temperature", 2.0))
         base_lambda_kd = float(getattr(self.args, "lambda_kd", 0.0)) if (use_logits or use_generalist_logits) else 0.0
         kd_mix_beta = float(getattr(self.args, "kd_mix_beta", 0.5)) if use_generalist_logits else 0.0
+        # 改进 loss 控制参数（opt-in，默认与原始行为完全相同）
+        fr_loss_type = str(getattr(self.args, "fr_loss_type", "mse")).lower()
+        use_fr_feat = bool(getattr(self.args, "use_fr_feat", False))
+        alpha_fr_feat = float(getattr(self.args, "alpha_fr_feat", 0.5))
+        use_self_kd = bool(getattr(self.args, "use_self_kd", False))
+        lambda_self_kd = float(getattr(self.args, "lambda_self_kd", 0.3)) if use_self_kd else 0.0
         optimizer = optim.SGD(model_new.parameters(), lr=receiver_lr, momentum=self.args.momentum, weight_decay=self.args.weight_decay)
         scheduler = self._build_receiver_scheduler(optimizer, receiver_epochs)
         criterion = nn.CrossEntropyLoss()
@@ -201,7 +309,10 @@ class SocialTrainer:
         last_kd = 0.0
         last_sender_kd = 0.0
         last_generalist_kd = 0.0
+        last_self_kd = 0.0
         model_new.train()
+        if bool(getattr(self.args, "freeze_bn_stats", False)):
+            _freeze_batchnorm_stats(model_new)
         for epoch in range(receiver_epochs):
             lambda_fr, lambda_kd = self._current_loss_weights(epoch, receiver_epochs, base_lambda_fr, base_lambda_kd)
             for batch in loader:
@@ -231,10 +342,22 @@ class SocialTrainer:
                     batch_generalist_logits = None
                 batch_images = batch_images.to(self.device)
                 batch_labels = batch_labels.to(self.device)
+                batch_images = _augment_cifar_batch(batch_images, self.args)
                 optimizer.zero_grad()
                 logits = model_new(batch_images)
                 loss_cls = criterion(logits, batch_labels)
-                loss_fr = self._compute_fr_loss(model_old, model_new, batch_images, batch_labels) if use_fr else torch.tensor(0.0, device=self.device)
+                # FR loss：通过 fr_loss_type 选择 mse（原始）或 kl（改进）
+                if use_fr:
+                    if fr_loss_type == "kl":
+                        loss_fr = self._compute_fr_loss_kl(model_old, model_new, batch_images, batch_labels)
+                    else:
+                        loss_fr = self._compute_fr_loss(model_old, model_new, batch_images, batch_labels)
+                    if use_fr_feat:
+                        loss_fr = loss_fr + alpha_fr_feat * self._compute_fr_feat_loss(model_old, model_new, batch_images, batch_labels)
+                else:
+                    loss_fr = torch.tensor(0.0, device=self.device)
+                # Self-KD loss（全 batch 旧模型软标签约束）
+                loss_self_kd = self._compute_self_kd_loss(model_old, model_new, batch_images) if use_self_kd else torch.tensor(0.0, device=self.device)
                 loss_sender_kd = (
                     self._compute_kd_loss(logits, batch_teacher_logits, batch_teacher_class_ids, batch_sender_agents)
                     if use_logits
@@ -251,7 +374,7 @@ class SocialTrainer:
                     loss_kd = loss_generalist_kd
                 else:
                     loss_kd = loss_sender_kd
-                loss = loss_cls + lambda_fr * loss_fr + lambda_kd * loss_kd
+                loss = loss_cls + lambda_fr * loss_fr + lambda_kd * loss_kd + lambda_self_kd * loss_self_kd
                 loss.backward()
                 optimizer.step()
                 last_cls = float(loss_cls.detach().cpu())
@@ -259,11 +382,13 @@ class SocialTrainer:
                 last_kd = float(loss_kd.detach().cpu())
                 last_sender_kd = float(loss_sender_kd.detach().cpu())
                 last_generalist_kd = float(loss_generalist_kd.detach().cpu())
+                last_self_kd = float(loss_self_kd.detach().cpu())
             if scheduler is not None:
                 scheduler.step()
         torch.save(model_new.state_dict(), checkpoint_dir / "after_social.pt")
         after = evaluate_receiver_model(self.args, model_new, self.receiver_agent, self.device)
         external_raw = sum(p["raw_images"] for p in packets if p["sender_agent"] != self.receiver_agent)
+        self_real_images = sum(p["num_images"] for p in packets if p.get("source") == "self_real")
         external_logit_bytes = (
             sum(p["sender_logit_bytes"] for p in packets if p["sender_agent"] != self.receiver_agent)
             if use_logits
@@ -288,6 +413,8 @@ class SocialTrainer:
             "packet_method": getattr(self.args, "packet_method", "dsdm"),
             "method": method,
             "init_mode": init_mode,
+            "self_data_mode": getattr(self.args, "self_data_mode", "packet"),
+            "self_real_per_class": int(getattr(self.args, "self_real_per_class", 0) or 0),
             "use_fr": str(use_fr).lower(),
             "lambda_fr": base_lambda_fr,
             "use_logits": str(use_logits).lower(),
@@ -297,6 +424,7 @@ class SocialTrainer:
             "lambda_kd": base_lambda_kd,
             "kd_temperature": self.kd_temperature,
             "ipc": int(self.args.ipc),
+            "self_real_images": int(self_real_images),
             "external_comm_images": int(external_raw),
             "external_comm_logit_bytes": int(external_logit_bytes),
             "external_comm_generalist_logit_bytes": int(external_generalist_logit_bytes),
@@ -311,4 +439,10 @@ class SocialTrainer:
             "loss_kd": last_kd,
             "loss_sender_kd": last_sender_kd,
             "loss_generalist_kd": last_generalist_kd,
+            "loss_self_kd": last_self_kd,
+            "fr_loss_type": fr_loss_type,
+            "use_fr_feat": str(use_fr_feat).lower(),
+            "use_self_kd": str(use_self_kd).lower(),
+            "receiver_augment": str(bool(getattr(self.args, "receiver_augment", False))).lower(),
+            "freeze_bn_stats": str(bool(getattr(self.args, "freeze_bn_stats", False))).lower(),
         }

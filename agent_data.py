@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset, Subset
 from torchvision import datasets, transforms
 
-from config_adapter import build_dsdm_args_from_config
+from config_adapter import apply_pcbn_overrides, build_dsdm_args_from_config
 
 
 CIFAR10_AGENT_CLASS_SPLIT = {
@@ -159,8 +159,9 @@ def _refresh_model_metadata(args):
     """根据实际 net_type/depth/width 刷新 DSDM 模型标签和特征层。"""
     if args.net_type == "convnet":
         args.f_idx = str(args.depth - 1)
-    elif args.net_type in {"resnet", "resnet_ap"}:
-        args.f_idx = "4"
+    elif args.net_type in {"resnet", "resnet_cifar_standard", "resnet_ap"}:
+        # ResNet logits前一层 = avgpool+flatten输出，idx=5（idx4是layer4空间图，idx6是logits）
+        args.f_idx = "5"
     elif args.net_type == "alexnet":
         # AlexNetCIFAR last_feature = idx7，对应logits前一层[B,512]
         args.f_idx = "7"
@@ -175,6 +176,8 @@ def _refresh_model_metadata(args):
     elif args.net_type in {"alexnet", "vgg"}:
         # alexnet/vgg 不依赖depth，modeltag只用架构名
         args.modeltag = args.net_type
+    elif args.net_type == "resnet_cifar_standard":
+        args.modeltag = f"resnet{args.depth}_cifar_w1"
     else:
         args.modeltag = f"{args.net_type}{args.depth}"
     if args.norm_type == "instance":
@@ -214,12 +217,31 @@ def build_agent_args(base_cfg, config_path, agent_id):
     args.sender_model = args.model_name
     _refresh_model_metadata(args)
     _refresh_feature_indices(args)
-    # 应用 per-model 蒸馏参数覆盖（lr_img, niter, pretrain_dir）
+    expert_cfg = model_cfg.get("expert_training", {})
+    if expert_cfg:
+        args.pretrained_model_number = int(expert_cfg.get("num_models", args.pretrained_model_number))
+        args.pretrained_epochs = int(expert_cfg.get("epochs", args.pretrained_epochs))
+        args.expert_lr = float(expert_cfg.get("lr", args.lr))
+        args.expert_batch_size = int(expert_cfg.get("batch_size", args.batch_size))
+        args.expert_augment = bool(expert_cfg.get("augment", False))
+        args.expert_scheduler = str(expert_cfg.get("scheduler", "none"))
+        args.expert_scheduler_milestones = [int(v) for v in expert_cfg.get("scheduler_milestones", [])]
+        args.expert_scheduler_gamma = float(expert_cfg.get("scheduler_gamma", 0.1))
+    # 应用 per-model 蒸馏参数覆盖，并在 f_idx 覆盖后同步实际 DSDM 特征层。
     distill_override = model_cfg.get("distillation", {})
+    if distill_override.get("f_idx") is not None:
+        args.f_idx = str(distill_override["f_idx"])
+        _refresh_feature_indices(args)
     if distill_override.get("lr_img") is not None:
         args.lr_img = float(distill_override["lr_img"])
     if distill_override.get("niter") is not None:
         args.niter = int(distill_override["niter"])
+    if "evaluate_iter" in distill_override:
+        args.evaluate_iter = int(distill_override["evaluate_iter"])
+    if "evaluate_iterations" in distill_override:
+        args.evaluate_iterations = distill_override["evaluate_iterations"]
+    if isinstance(distill_override.get("pcbn"), dict):
+        apply_pcbn_overrides(args, distill_override["pcbn"])
     if distill_override.get("pretrain_dir") is not None:
         args.pretrain_dir = str(distill_override["pretrain_dir"])
     args.save_pretrain_dir = str(get_agent_dir(args, agent_id) / "checkpoints")
@@ -287,9 +309,9 @@ def get_cifar10_test_dataset(args):
     return get_test_dataset(args)
 
 
-def get_agent_train_dataset(args, agent_id, normalize=False):
+def get_agent_train_dataset(args, agent_id, normalize=False, augment=False):
     """加载单个 agent 的 expert class 训练集。"""
-    dataset = get_train_dataset(args, normalize=normalize)
+    dataset = get_train_dataset(args, normalize=normalize, augment=augment)
     return ActiveClassDataset(dataset, get_agent_class_split(args)[int(agent_id)], num_classes=get_num_classes(args))
 
 

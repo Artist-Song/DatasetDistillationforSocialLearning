@@ -23,7 +23,12 @@ def parse_cli():
     """解析 packet 有效性验证命令行参数。"""
     parser = argparse.ArgumentParser(description="验证 packet 数量、标签分布和 decode 状态")
     parser.add_argument("--config", default="configs/main.yaml", help="主配置文件路径")
-    parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance", "full_real"], help="packet 方法")
+    parser.add_argument(
+        "--packet-method",
+        default="dsdm",
+        choices=["dsdm", "heuristic", "importance", "fast", "full_real"],
+        help="packet 方法",
+    )
     parser.add_argument("--dry-run", action="store_true", help="只打印计划，不读取 packet")
     return parser.parse_args()
 
@@ -72,6 +77,15 @@ def _build_warning(args, packet_method, summary):
                 warnings.append(f"total_raw_images={summary.get('total_raw_images')}，期望 {expected_total}")
             external = expected_total - max(len(classes) for classes in class_split.values()) * samples_per_class
             summary["expected_external_comm_images_per_receiver"] = int(external)
+        return warnings
+    if packet_method in {"heuristic", "importance", "fast"}:
+        expected_total = sum(len(classes) for classes in get_agent_class_split(args).values()) * int(args.ipc)
+        if int(summary.get("total_raw_images", -1)) != expected_total:
+            warnings.append(f"total_raw_images={summary.get('total_raw_images')}，期望 {expected_total}")
+        for class_id in range(get_num_classes(args)):
+            got = int(summary.get("per_class_raw_images", {}).get(str(class_id), 0))
+            if got != int(args.ipc):
+                warnings.append(f"class {class_id} raw images={got}，期望 IPC={args.ipc}")
         return warnings
     if packet_method != "dsdm":
         return warnings

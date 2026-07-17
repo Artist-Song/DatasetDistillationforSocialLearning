@@ -29,6 +29,7 @@ distillation:
   metric: mse
   f_idx: "2"
   niter: 10000
+  evaluate_iterations: [100, 500, 1000, 2000, 3000, 5000, 7500, 10000]
   lr_img: 0.1
   mom_img: 0.5
   batch_real: 256

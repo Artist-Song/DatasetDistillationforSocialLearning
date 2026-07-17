@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from agent_data import get_agent_class_split, get_agent_dir, get_agent_model_split, get_receiver_dir, get_run_dir
+from output_manager import atomic_copyfile
 
 
 MANIFEST_FIELDS = ["sender_agent", "sender_model", "classes", "method", "ipc", "packet_path"]
@@ -16,6 +17,8 @@ SOCIAL_RESULT_FIELDS = [
     "packet_method",
     "method",
     "init_mode",
+    "self_data_mode",
+    "self_real_per_class",
     "use_fr",
     "lambda_fr",
     "use_logits",
@@ -25,6 +28,7 @@ SOCIAL_RESULT_FIELDS = [
     "lambda_kd",
     "kd_temperature",
     "ipc",
+    "self_real_images",
     "external_comm_images",
     "external_comm_logit_bytes",
     "external_comm_generalist_logit_bytes",
@@ -39,6 +43,8 @@ SOCIAL_RESULT_FIELDS = [
     "loss_kd",
     "loss_sender_kd",
     "loss_generalist_kd",
+    "receiver_augment",
+    "freeze_bn_stats",
     "time",
 ]
 
@@ -112,7 +118,7 @@ def register_agent_packet(args, agent_id, packet_path, packet_method="dsdm"):
     hub_dir = get_method_packet_hub_dir(args, packet_method)
     hub_dir.mkdir(parents=True, exist_ok=True)
     dst = hub_dir / f"agent_{int(agent_id)}_{packet_method}_packet.pt"
-    shutil.copyfile(packet_path, dst)
+    atomic_copyfile(packet_path, dst)
     return {
         "sender_agent": int(agent_id),
         "sender_model": model_split[int(agent_id)],
@@ -196,6 +202,8 @@ def _migrate_social_result_row(row, old_fields):
     clean["packet_method"] = row.get("packet_method", old_method.lower() if old_method else "")
     clean["method"] = old_method
     clean["init_mode"] = row.get("init_mode", "expert")
+    clean["self_data_mode"] = row.get("self_data_mode", "packet")
+    clean["self_real_per_class"] = row.get("self_real_per_class", "0")
     clean["use_fr"] = row.get("use_fr", "true")
     clean["lambda_fr"] = row.get("lambda_fr", "0.05")
     clean["use_logits"] = row.get("use_logits", "false")
@@ -204,9 +212,12 @@ def _migrate_social_result_row(row, old_fields):
     clean["kd_mix_beta"] = row.get("kd_mix_beta", "0.0")
     clean["lambda_kd"] = row.get("lambda_kd", "0.0")
     clean["kd_temperature"] = row.get("kd_temperature", "2.0")
+    clean["self_real_images"] = row.get("self_real_images", "0")
     clean["external_comm_logit_bytes"] = row.get("external_comm_logit_bytes", "0")
     clean["external_comm_generalist_logit_bytes"] = row.get("external_comm_generalist_logit_bytes", "0")
     clean["loss_kd"] = row.get("loss_kd", "0.0")
     clean["loss_sender_kd"] = row.get("loss_sender_kd", "0.0")
     clean["loss_generalist_kd"] = row.get("loss_generalist_kd", "0.0")
+    clean["receiver_augment"] = row.get("receiver_augment", "false")
+    clean["freeze_bn_stats"] = row.get("freeze_bn_stats", "false")
     return clean

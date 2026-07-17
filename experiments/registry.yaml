@@ -1,0 +1,369 @@
+version: 1
+updated_at: '2026-07-17'
+selection_policy:
+  primary: global
+  near_tie_threshold: 0.5
+  near_tie_preferences:
+    - higher_new
+    - lower_forgetting
+
+experiments:
+  - id: one_resnet_ours_ipc10
+    title: Ours
+    role: main
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 50
+    ipc: 10
+    packet: Distilled images
+    soft_labels: Sender expert logits
+    protocol: one-ResNet self-guided DSDM
+    comparability_group: one_resnet_ipc10_image_budget
+    source:
+      type: pipeline
+      path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10/metrics/social_results.csv
+      expected_seeds: [0, 1, 2]
+      method: DSDM_LOGIT
+      receiver_key: receiver_agent
+      expected_receivers: [0, 1, 2, 3]
+      metrics:
+        global: acc_global_after
+        new: acc_new_after
+        expert: acc_expert_after
+        forgetting: forgetting
+
+  - id: one_resnet_ours_ipc50
+    title: Ours
+    role: main
+    status: interim
+    paper_eligible: true
+    allow_partial: true
+    table_section: ipc
+    table_order: 50
+    ipc: 50
+    packet: Distilled images
+    soft_labels: Sender expert logits
+    protocol: one-ResNet self-guided DSDM
+    comparability_group: one_resnet_ipc50_image_budget
+    caveat: Interim until seed1 has four receiver rows.
+    source:
+      type: pipeline
+      path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50/metrics/social_results.csv
+      expected_seeds: [0, 1, 2]
+      method: DSDM_LOGIT
+      receiver_key: receiver_agent
+      expected_receivers: [0, 1, 2, 3]
+      metrics:
+        global: acc_global_after
+        new: acc_new_after
+        expert: acc_expert_after
+        forgetting: forgetting
+
+  - id: one_resnet_heuristic_ipc10
+    title: Heuristic
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 30
+    ipc: 10
+    packet: Random real images
+    soft_labels: 'No'
+    protocol: hard labels, factor 1
+    comparability_group: one_resnet_ipc10_image_budget
+    source:
+      type: pipeline
+      path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10_heuristic_hard/metrics/social_results.csv
+      expected_seeds: [0, 1, 2]
+      method: HEURISTIC
+      receiver_key: receiver_agent
+      expected_receivers: [0, 1, 2, 3]
+      metrics: &pipeline_metrics
+        global: acc_global_after
+        new: acc_new_after
+        expert: acc_expert_after
+        forgetting: forgetting
+
+  - id: one_resnet_heuristic_ipc50
+    title: Heuristic
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 30
+    ipc: 50
+    packet: Random real images
+    soft_labels: 'No'
+    protocol: hard labels, factor 1
+    comparability_group: one_resnet_ipc50_image_budget
+    source:
+      type: pipeline
+      path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50_heuristic_hard/metrics/social_results.csv
+      expected_seeds: [0, 1, 2]
+      method: HEURISTIC
+      receiver_key: receiver_agent
+      expected_receivers: [0, 1, 2, 3]
+      metrics: *pipeline_metrics
+
+  - id: one_resnet_fast_ipc10
+    title: FAST
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 40
+    ipc: 10
+    packet: Selected real images
+    soft_labels: 'No'
+    protocol: official pixels/per-class/minmax, hard labels
+    comparability_group: one_resnet_ipc10_image_budget
+    source:
+      type: pipeline
+      path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10_fast/metrics/social_results.csv
+      expected_seeds: [0, 1, 2]
+      method: FAST
+      receiver_key: receiver_agent
+      expected_receivers: [0, 1, 2, 3]
+      metrics: *pipeline_metrics
+
+  - id: one_resnet_fast_ipc50
+    title: FAST
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 40
+    ipc: 50
+    packet: Selected real images
+    soft_labels: 'No'
+    protocol: official pixels/per-class/minmax, hard labels
+    comparability_group: one_resnet_ipc50_image_budget
+    source:
+      type: pipeline
+      path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50_fast/metrics/social_results.csv
+      expected_seeds: [0, 1, 2]
+      method: FAST
+      receiver_key: receiver_agent
+      expected_receivers: [0, 1, 2, 3]
+      metrics: *pipeline_metrics
+
+  - id: masc_complete_ipc10
+    title: MASC-complete
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 10
+    ipc: 10
+    packet: Real CC images
+    soft_labels: Teacher KD
+    protocol: homogeneous official Netwider; CC + RA + HFE; model interaction
+    comparability_group: adapted_baseline_ipc10
+    caveat: Single seed and about 452 MB model-parameter interaction.
+    source:
+      type: average_row
+      path: external_baselines/outputs/masc_complete/seed0_10/social_results.csv
+      average_key: agent_id
+      average_value: avg
+      metrics: &average_metrics
+        global: acc_global
+        new: acc_new
+        expert: acc_expert
+        forgetting: forgetting
+
+  - id: masc_complete_ipc50
+    title: MASC-complete
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 10
+    ipc: 50
+    packet: Real CC images
+    soft_labels: Teacher KD
+    protocol: homogeneous official Netwider; CC + RA + HFE; model interaction
+    comparability_group: adapted_baseline_ipc50
+    caveat: Single seed and about 452 MB model-parameter interaction.
+    source:
+      type: average_row
+      path: external_baselines/outputs/masc_complete/seed0_50/social_results.csv
+      average_key: agent_id
+      average_value: avg
+      metrics: *average_metrics
+
+  - id: desa_cil_ipc10
+    title: DeSA-CIL
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 20
+    ipc: 10
+    packet: Synthetic anchors
+    soft_labels: Owner KD
+    protocol: owner-aware class-incremental adaptation, seed0 one-ResNet
+    comparability_group: adapted_baseline_ipc10
+    caveat: Single seed; iterative owner logits are additional communication.
+    source:
+      type: average_row
+      path: external_baselines/outputs/desa_cil/cifar100_4agent_25cls_one_resnet_seed0_ipc10/social_results.csv
+      average_key: receiver
+      average_value: avg
+      metrics: *average_metrics
+
+  - id: desa_cil_ipc50
+    title: DeSA-CIL
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: ipc
+    table_order: 20
+    ipc: 50
+    packet: Synthetic anchors
+    soft_labels: Owner KD
+    protocol: owner-aware class-incremental adaptation, seed0 one-ResNet
+    comparability_group: adapted_baseline_ipc50
+    caveat: Single seed; iterative owner logits are additional communication.
+    source:
+      type: average_row
+      path: external_baselines/outputs/desa_cil/cifar100_4agent_25cls_one_resnet_seed0_ipc50/social_results.csv
+      average_key: receiver
+      average_value: avg
+      metrics: *average_metrics
+
+  - id: one_resnet_full_real
+    title: Full Real
+    role: oracle
+    status: complete
+    paper_eligible: true
+    table_section: validation
+    table_order: 10
+    packet: All real images
+    soft_labels: 'No'
+    protocol: one-ResNet heterogeneous receivers; 37,500 external images/receiver
+    comparability_group: one_resnet_full_data
+    source:
+      type: pipeline
+      path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10_fullreal/metrics/social_results.csv
+      expected_seeds: [0, 1, 2]
+      method: FULL_REAL
+      receiver_key: receiver_agent
+      expected_receivers: [0, 1, 2, 3]
+      metrics: *pipeline_metrics
+
+  - id: masc_full_validation
+    title: MASC Full
+    role: oracle
+    status: complete
+    paper_eligible: true
+    table_section: validation
+    table_order: 20
+    packet: Full collaboration data
+    soft_labels: Teacher KD
+    protocol: homogeneous official Netwider; validation gate
+    comparability_group: masc_full_data
+    caveat: Not comparable to one-ResNet Full Real as a method ranking.
+    source:
+      type: average_row
+      path: external_baselines/outputs/masc_complete/seed0_full/social_results.csv
+      average_key: agent_id
+      average_value: avg
+      metrics: *average_metrics
+
+  - id: conv_family_core
+    title: Conv-family IPC=10/50
+    role: historical_evidence
+    status: complete
+    paper_eligible: false
+    description: Established low-budget DSDM behavior and receiver hyperparameter basis.
+    source:
+      type: evidence
+      paths:
+        - outputs/cifar100_4agent_25cls_conv_family_ipc10/metrics/social_results.csv
+        - outputs/cifar100_4agent_25cls_conv_family_ipc50/metrics/social_results.csv
+
+  - id: all_conv_ipc50
+    title: all-ConvNet IPC=50
+    role: historical_evidence
+    status: complete
+    paper_eligible: false
+    description: High-budget receiver and communication diagnostic; do not mark invalid.
+    source:
+      type: evidence
+      paths:
+        - outputs/cifar100_4agent_25cls_ipc50_allconvnet/metrics/social_results.csv
+
+  - id: hetero4arch_history
+    title: hetero4arch VGG/AlexNet study
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    description: Stability and feature-index evidence; retain metrics/config/provenance.
+    source:
+      type: evidence
+      paths:
+        - outputs/cifar100_4agent_25cls_hetero4arch_ipc10/metrics/social_results.csv
+
+  - id: hetero6arch_history
+    title: hetero6arch ConvNet-packet transfer
+    role: historical_evidence
+    status: complete
+    paper_eligible: false
+    description: Cross-architecture ConvNet-family packet reuse and guide-mode comparisons.
+    source:
+      type: evidence
+      paths:
+        - outputs/cifar100_4agent_25cls_hetero6arch_ipc10_seed0/metrics/social_results.csv
+        - outputs/cifar100_4agent_25cls_hetero6arch_ipc10_seed1/metrics/social_results.csv
+        - outputs/cifar100_4agent_25cls_hetero6arch_ipc10_seed2/metrics/social_results.csv
+
+  - id: centralized_upper_bounds
+    title: Centralized full-data upper bounds
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    description: Separates model capacity and training recipe from packet quality.
+    source:
+      type: evidence
+      paths:
+        - outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_conv3in_dsdm_strict.csv
+        - outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_resnet10_bn_aug_ms.csv
+
+  - id: novgg_backbone_guidance
+    title: no-VGG ResNet guide/feature diagnostics
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    description: Retains self-guided ResNet packet provenance and penultimate-feature receiver comparisons.
+    source:
+      type: evidence
+      paths:
+        - outputs/cifar100_4agent_25cls_novgg_r10_backbone_ipc10/metrics/novgg_r10_artifact_provenance.json
+        - outputs/cifar100_4agent_25cls_novgg_r10_backbone_penult_ipc10/metrics/social_results.csv
+        - outputs/cifar100_4agent_25cls_novgg_r18_backbone_ipc10/metrics/novgg_r18_artifact_provenance.json
+        - outputs/cifar100_4agent_25cls_novgg_r18_backbone_penult_ipc10/metrics/social_results.csv
+
+  - id: resnet_recipe_diagnostics
+    title: ResNet compact/standard packet diagnostics
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    description: Separates compact-versus-standard model recipe behavior from selection packet behavior.
+    source:
+      type: evidence
+      paths:
+        - outputs/cifar100_resnet18_compact_recipe_diag_seed0_ipc50_fast/metrics/packet_integrity_fast.csv
+        - outputs/cifar100_resnet18_standard_recipe_diag_seed0_ipc50_fast/metrics/packet_integrity_fast.csv
+
+superseded_sources:
+  - id: masc_official_flow_old
+    reason: Replaced by MASC-complete CC + RA + HFE reproduction.
+    paths:
+      - outputs/masc_official_ipc/ipc10_seed0/metrics/social_results.csv
+      - outputs/masc_official_ipc/ipc50_seed0/metrics/social_results.csv
+  - id: desa_comparable_fixed_old
+    reason: Replaced in the main table by owner-aware DeSA-CIL.
+    paths:
+      - external_baselines/outputs/desa_social/ipc10_results_comparable_fixed.csv
+      - external_baselines/outputs/desa_social/ipc50_results_comparable_fixed.csv

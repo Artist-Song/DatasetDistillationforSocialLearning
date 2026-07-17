@@ -1,0 +1,212 @@
+project:
+  name: social_packet_learning
+  stage: hetero6arch_ipc50
+  output_root: ./outputs
+  run_name: cifar100_4agent_25cls_hetero6arch_ipc50_seed1
+
+dataset:
+  name: cifar100
+  data_dir: ./data
+  num_classes: 100
+  image_size: 32
+
+# hetero6arch 主实验 seed=0
+# 模型池：ConvNet-3 / ConvNet-4 / VGG11 / AlexNet / ResNet-10 / ResNet-18
+# 4 个 agent 从模型池随机分配架构（此处 seed0 固定组合）
+#
+# seed0 分配（最大化复用已有 expert 模型，无需重新训练）：
+#   agent_0: AlexNet,       classes 0–24   ← 复用 hetero4arch agent_3 expert
+#   agent_1: ConvNet-3-w1.0, classes 25–49  ← 复用 hetero4arch agent_0 expert
+#   agent_2: VGG11-CIFAR,  classes 50–74  ← 复用 hetero4arch agent_2 expert
+#   agent_3: ConvNet-4-w1.5, classes 75–99  ← 复用 hetero4arch agent_1 expert
+#
+# DSDM 包来源：复用 conv_family_ipc50（共享 ConvNet-3 指导模型生成）：
+#   agent_0 packet ← conv_family_ipc50/agent_0 (classes 0–24)
+#   agent_1 packet ← conv_family_ipc50/agent_1 (classes 25–49)
+#   agent_2 packet ← conv_family_ipc50/agent_2 (classes 50–74)
+#   agent_3 packet ← conv_family_ipc50/agent_3 (classes 75–99)
+model_pool:
+  default: convnet3w1
+  models:
+    convnet3w1:
+      family: convnet
+      depth: 3
+      width: 1.0
+      norm_type: instance
+    convnet4w15:
+      family: convnet
+      depth: 4
+      width: 1.5
+      norm_type: instance
+    vgg:
+      family: vgg
+      norm_type: batch
+    alexnet:
+      family: alexnet
+      norm_type: batch
+    resnet10:
+      family: resnet
+      depth: 10
+      norm_type: batch
+    resnet18:
+      family: resnet
+      depth: 18
+      norm_type: batch
+
+# expert 训练 recipe（主要用于 ResNet seeds，当前 seed0 直接复用已有模型）
+centralized_full:
+  recipes:
+    convnet3w1:
+      recipe_name: conv_family_dsdm_strict
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: false
+      use_dsdm_train: true
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    convnet4w15:
+      recipe_name: conv_family_dsdm_strict
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: false
+      use_dsdm_train: true
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    vgg:
+      recipe_name: vgg_cifar_recipe
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: true
+      use_dsdm_train: false
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    alexnet:
+      recipe_name: alexnet_cifar_recipe
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: true
+      use_dsdm_train: false
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    resnet10:
+      recipe_name: resnet_cifar_recipe
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: true
+      use_dsdm_train: false
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+    resnet18:
+      recipe_name: resnet_cifar_recipe
+      epochs: 500
+      lr: 0.01
+      batch_size: 128
+      momentum: 0.9
+      weight_decay: 0.0005
+      augment: true
+      use_dsdm_train: false
+      scheduler: multistep
+      scheduler_milestones: [333, 416]
+      scheduler_gamma: 0.2
+
+distillation:
+  method: dsdm
+  ipc: 50
+  factor: 2
+  init: mix
+  decode_type: single
+  aug_type: color_crop_cutout
+  match: semantic
+  metric: mse
+  f_idx: "2"
+  niter: 10000
+  lr_img: 0.1
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  smooth_iter: 2000
+  cov_weight: 50.0
+  h_p_weight: 0.2
+  smooth_factor: 0.99
+  pretrained_model_number: 10
+  pretrained_epochs: 20
+
+selection:
+  enabled: true
+  methods:
+    - heuristic
+    - full_real
+  heuristic:
+    strategy: random_per_class
+
+packet:
+  enabled: true
+  format: hard_label_images
+
+communication:
+  enabled: false
+  protocol: none
+
+agents:
+  num_agents: 4
+  num_classes: 100
+  class_split:
+    agent_0: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    agent_1: [25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+    agent_2: [50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74]
+    agent_3: [75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99]
+  model_split:
+    agent_0: convnet4w15
+    agent_1: alexnet
+    agent_2: resnet10
+    agent_3: vgg
+
+social_learning:
+  receiver:
+    epochs: 225
+    lr: 0.001
+    lambda_fr: 0.05
+    # self_real_per_class: 每个expert类在社会化训练时混入的真实数据量，缓解遗忘
+    self_real_per_class: 20
+    scheduler: none
+    scheduler_gamma: 0.2
+    scheduler_milestones:
+      - 150
+      - 187
+
+logits:
+  enabled: true
+  lambda_kd: 0.5
+  temperature: 2.0
+
+evaluation:
+  enabled: true
+  epochs: 1500
+  batch_size: 64
+  repeat: 1
+
+runtime:
+  seed: 0
+  workers: 8
+  device: cuda
+  gpu_id: 1

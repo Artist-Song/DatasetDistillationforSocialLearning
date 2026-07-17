@@ -16,6 +16,8 @@ from misc import utils
 from math import ceil
 from pathlib import Path
 import random
+from pcbn import PCBNRegularizer
+from evaluation_schedule import resolve_evaluation_iterations
 
 
 class ActiveClassDataset(torch.utils.data.Dataset):
@@ -510,6 +512,31 @@ def condense(args, logger, device='cuda'):
     # Define syn dataset
     synset = Synthesizer(args, nclass, nch, hs, ws)
     synset.init(loader_real, init_type=args.init)
+    resume_best_path = Path(getattr(args, "output_root", "")) / "synthetic" / "data_best.pt"
+    resume_best_acc = -1
+    if resume_best_path.exists():
+        try:
+            # 若已有同一 agent 的最优 synthetic，重启蒸馏时从该结果继续优化，避免低分评估覆盖已有 packet。
+            resume_payload = torch.load(resume_best_path, map_location=device)
+            if isinstance(resume_payload, dict):
+                resume_images = resume_payload.get("images")
+                resume_labels = resume_payload.get("labels")
+                resume_best_acc = float(resume_payload.get("best_acc", -1))
+            elif isinstance(resume_payload, (list, tuple)) and len(resume_payload) >= 2:
+                resume_images, resume_labels = resume_payload[:2]
+            else:
+                resume_images, resume_labels = None, None
+            if resume_images is not None and tuple(resume_images.shape) == tuple(synset.data.shape):
+                synset.data.data.copy_(resume_images.to(device))
+                if resume_labels is not None and tuple(resume_labels.shape) == tuple(synset.targets.shape):
+                    synset.targets.data.copy_(resume_labels.to(device))
+                logger(f"[resume synthetic] loaded {resume_best_path} best_acc={resume_best_acc:.1f}")
+            else:
+                logger(f"[resume synthetic skip] shape mismatch: {resume_best_path}")
+                resume_best_acc = -1
+        except Exception as exc:
+            logger(f"[resume synthetic skip] {resume_best_path}: {type(exc).__name__}: {exc}")
+            resume_best_acc = -1
     save_img(os.path.join(args.save_dir, 'init.png'),
              synset.data,
              unnormalize=False,
@@ -535,12 +562,18 @@ def condense(args, logger, device='cuda'):
     ts = utils.TimeStamp(args.time)
    
     it_log = 20
-    it_test = [i for i in range(0, args.niter+1, args.evaluate_iter)]
+    it_test = set(resolve_evaluation_iterations(
+        args.niter,
+        getattr(args, 'evaluate_iterations', None),
+        args.evaluate_iter,
+    ))
 
     logger(
         f"\nStart condensing with {args.match} matching for {args.niter} iteration")
+    logger(f"Evaluation checkpoints ({len(it_test)}): {sorted(it_test)}")
 
-    best_acc = -1
+    best_acc = resume_best_acc
+    pcbn_regularizer = PCBNRegularizer(args, logger)
 
     smooth_syns = {class_id: None for class_id in active_class_ids}
     h_p = {class_id: None for class_id in active_class_ids}
@@ -558,8 +591,10 @@ def condense(args, logger, device='cuda'):
         model.eval()
         for param in model.parameters():
             param.requires_grad_(False)
+        pcbn_regularizer.attach(model)
 
         loss_total = 0
+        pcbn_loss_total = 0
         synset.data.data = torch.clamp(synset.data.data, min=0., max=1.)
         ts.set()
 
@@ -576,6 +611,10 @@ def condense(args, logger, device='cuda'):
                 loss = matchloss(args, img_aug[:n], img_aug[n:], model, h_p=h_p[c])
             else:
                 loss = matchloss(args, img_aug[:n], img_aug[n:], model)
+            pcbn_loss = pcbn_regularizer.loss(model, img_aug[:n], img_aug[n:])
+            if pcbn_loss is not None:
+                loss = loss + pcbn_loss
+                pcbn_loss_total += float(pcbn_loss.detach().item())
             loss_total += loss.item()
             ts.stamp("loss")
             loss.backward()
@@ -601,8 +640,11 @@ def condense(args, logger, device='cuda'):
 
          # Logging
         if it % it_log == 0:
+            loss_msg = f"{utils.get_time()} (Iter {it:3d}) loss: {loss_total/len(active_class_ids):.1f}"
+            if pcbn_regularizer.enabled:
+                loss_msg += f" pcbn: {pcbn_loss_total/len(active_class_ids):.4f}"
             logger(
-                f"{utils.get_time()} (Iter {it:3d}) loss: {loss_total/len(active_class_ids):.1f}")
+                loss_msg)
         if (it + 1) in it_test:
             if not args.test:
                 conv_result = synset.test(args, val_loader, logger)
@@ -639,10 +681,15 @@ def condense(args, logger, device='cuda'):
                 logger(
                     "->->->->->->->->->->->->-> Best Result: {:.1f}".format(best_acc))
         if progress is not None:
-            progress.update(it + 1, extra=f"loss={loss_total/len(active_class_ids):.2f} best={best_acc:.1f}")
+            progress_extra = f"loss={loss_total/len(active_class_ids):.2f} best={best_acc:.1f}"
+            if pcbn_regularizer.enabled:
+                progress_extra += f" pcbn={pcbn_loss_total/len(active_class_ids):.4f}"
+            progress.update(it + 1, extra=progress_extra)
+        pcbn_regularizer.close()
 
     if progress is not None:
         progress.close(extra=f"best={best_acc:.1f}")
+    pcbn_regularizer.close()
 
 
 def run_dsdm(args):

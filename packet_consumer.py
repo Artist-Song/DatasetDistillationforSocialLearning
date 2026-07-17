@@ -3,6 +3,54 @@ from pathlib import Path
 import torch
 
 
+def _empty_packet_like(source, images, labels):
+    """构造非通信来源的训练数据块元信息。"""
+    return {
+        "images": images.float(),
+        "labels": labels.long(),
+        "raw_images": 0,
+        "num_images": int(images.shape[0]),
+        "decoded_for_training": False,
+        "source": source,
+        "class_ids": sorted({int(x) for x in labels.tolist()}),
+        "meta": {},
+        "has_sender_logits": False,
+        "sender_logits": None,
+        "sender_logit_class_ids": None,
+        "sender_logit_dim": 0,
+        "sender_logit_bytes": 0,
+        "has_generalist_logits": False,
+        "generalist_logits": None,
+        "generalist_logit_dim": 0,
+        "generalist_logit_bytes": 0,
+    }
+
+
+def _load_self_real_training_data(args):
+    """加载 receiver 本地真实 expert 数据，用作 self replay 且不计通信量。"""
+    from agent_data import ActiveClassDataset, get_num_classes, get_train_dataset
+
+    dataset = get_train_dataset(args, normalize=False, augment=False)
+    active_classes = [int(c) for c in getattr(args, "active_class_ids", [])]
+    subset = ActiveClassDataset(dataset, active_classes, num_classes=get_num_classes(args))
+    per_class_limit = int(getattr(args, "self_real_per_class", 0) or 0)
+    per_class_seen = {class_id: 0 for class_id in active_classes}
+    images = []
+    labels = []
+    for index in range(len(subset)):
+        image, label = subset[index]
+        label = int(label)
+        if per_class_limit > 0:
+            if per_class_seen[label] >= per_class_limit:
+                continue
+            per_class_seen[label] += 1
+        images.append(image)
+        labels.append(label)
+    if not images:
+        raise ValueError("self_data_mode=real 但 receiver 本地真实数据为空")
+    return _empty_packet_like("self_real", torch.stack(images), torch.tensor(labels, dtype=torch.long))
+
+
 def _decode_dsdm_images(args, packet):
     """复用 DSDM 原 decode_fn 解码 factorized synthetic data。"""
     from test import decode_fn
@@ -41,7 +89,7 @@ def consume_packet_for_training(args, packet_path, require_sender_logits=False, 
     if source == "dsdm":
         images, labels = _decode_dsdm_images(args, packet)
         decoded_for_training = bool(images.shape[0] != packet["images"].shape[0])
-    elif source in {"heuristic", "importance", "full_real"}:
+    elif source in {"heuristic", "importance", "fast", "full_real"}:
         images, labels = packet["images"].cpu(), packet["labels"].cpu()
         decoded_for_training = False
     else:
@@ -96,33 +144,70 @@ def consume_packet_for_training(args, packet_path, require_sender_logits=False, 
     }
 
 
-def consume_manifest_packets(args, manifest_rows, require_logits=False, require_generalist_logits=False):
-    """读取 manifest 中的全部 packet 并拼接成训练张量和可选 logits。"""
+def _fill_missing_logits_for_self_data(packets, require_logits=False, require_generalist_logits=False, num_classes=0):
+    """为 self real 数据补齐不会参与 KD 的占位 logits。"""
+    if require_logits:
+        logit_dim = next((p["sender_logit_dim"] for p in packets if p["has_sender_logits"]), 0)
+        if logit_dim <= 0:
+            raise ValueError("require_logits=true，但没有可用 sender logits")
+        for packet in packets:
+            if packet["has_sender_logits"]:
+                continue
+            if packet["source"] != "self_real":
+                raise ValueError("部分 packet 缺少 sender_logits，请为全部通信 packet 运行 attach_logits")
+            packet["sender_logits"] = torch.zeros((packet["num_images"], logit_dim), dtype=torch.float)
+            packet["sender_logit_class_ids"] = torch.zeros((packet["num_images"], logit_dim), dtype=torch.long)
+            packet["sender_logit_dim"] = int(logit_dim)
+    if require_generalist_logits:
+        logit_dim = next((p["generalist_logit_dim"] for p in packets if p["has_generalist_logits"]), int(num_classes))
+        if logit_dim <= 0:
+            raise ValueError("require_generalist_logits=true，但无法确定 generalist logits 维度")
+        for packet in packets:
+            if packet["has_generalist_logits"]:
+                continue
+            if packet["source"] != "self_real":
+                raise ValueError("部分 packet 缺少 generalist_logits，请先运行 attach_generalist_logits")
+            packet["generalist_logits"] = torch.zeros((packet["num_images"], logit_dim), dtype=torch.float)
+            packet["generalist_logit_dim"] = int(logit_dim)
+
+
+def consume_manifest_packets(args, manifest_rows, require_logits=False, require_generalist_logits=False, receiver_agent=None):
+    """读取 manifest 中的 packet，并按需用本地真实数据替换 self packet。"""
     packets = []
     sender_agent_chunks = []
+    receiver_agent = int(getattr(args, "agent_id", receiver_agent if receiver_agent is not None else -1))
+    self_data_mode = str(getattr(args, "self_data_mode", "packet")).lower()
+    if self_data_mode not in {"packet", "real"}:
+        raise ValueError(f"不支持的 self_data_mode: {self_data_mode}")
     for row in manifest_rows:
+        sender_agent = int(row["sender_agent"])
+        if self_data_mode == "real" and sender_agent == receiver_agent:
+            consumed = _load_self_real_training_data(args)
+            consumed["sender_agent"] = sender_agent
+            packets.append(consumed)
+            sender_agent_chunks.append(torch.full((consumed["images"].shape[0],), sender_agent, dtype=torch.long))
+            continue
         consumed = consume_packet_for_training(args, row["packet_path"], require_sender_logits=require_logits, require_generalist_logits=require_generalist_logits)
-        consumed["sender_agent"] = int(row["sender_agent"])
+        consumed["sender_agent"] = sender_agent
         packets.append(consumed)
-        sender_agent_chunks.append(torch.full((consumed["images"].shape[0],), int(row["sender_agent"]), dtype=torch.long))
+        sender_agent_chunks.append(torch.full((consumed["images"].shape[0],), sender_agent, dtype=torch.long))
+    _fill_missing_logits_for_self_data(
+        packets,
+        require_logits=require_logits,
+        require_generalist_logits=require_generalist_logits,
+        num_classes=int(getattr(args, "num_classes", getattr(args, "nclass", 0))),
+    )
     images = torch.cat([p["images"] for p in packets])
     labels = torch.cat([p["labels"] for p in packets])
     sender_agents = torch.cat(sender_agent_chunks)
-    has_any_logits = any(p["has_sender_logits"] for p in packets)
-    has_all_logits = all(p["has_sender_logits"] for p in packets)
     sender_logits = None
     sender_logit_class_ids = None
     if require_logits:
-        if not has_all_logits:
-            raise ValueError("部分 packet 缺少 sender_logits，请为全部 packet 运行 attach_logits")
         sender_logits = torch.cat([p["sender_logits"] for p in packets])
         sender_logit_class_ids = torch.cat([p["sender_logit_class_ids"] for p in packets])
 
-    has_all_generalist_logits = all(p["has_generalist_logits"] for p in packets)
     generalist_logits = None
     if require_generalist_logits:
-        if not has_all_generalist_logits:
-            raise ValueError("部分 packet 缺少 generalist_logits，请先运行 attach_generalist_logits")
         generalist_logits = torch.cat([p["generalist_logits"] for p in packets])
     return {
         "images": images,

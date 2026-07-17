@@ -6,6 +6,7 @@ __pycache__/
 # Local data and large experiment artifacts
 data/
 logs/
+tiny-imagenet-200.zip
 outputs/**
 !outputs/
 !outputs/experiment_registry/
@@ -19,3 +20,9 @@ outputs/**
 
 # Local reference PDFs
 paper/*.pdf
+
+# Generated receiver sweeps; generation scripts are versioned instead.
+configs/hetero4arch_receiver_tuning/
+configs/hetero4arch_vgg_alex_guardian/
+configs/hetero4arch_vgg_alex_tuning/
+configs/hetero4arch_vgg_selfreal/

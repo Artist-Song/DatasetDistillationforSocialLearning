@@ -165,14 +165,19 @@ agents:
 
 social_learning:
   receiver:
-    epochs: 100
+    epochs: 60
     lr: 0.01
-    lambda_fr: 0.20
+    lambda_fr: 0.2
+    scheduler: multistep
+    scheduler_gamma: 0.2
+    scheduler_milestones:
+    - 39
+    - 51
 
 logits:
   enabled: true
-  lambda_kd: 0.5
-  temperature: 2.0
+  lambda_kd: 0.6
+  temperature: 3.0
 
 evaluation:
   enabled: true

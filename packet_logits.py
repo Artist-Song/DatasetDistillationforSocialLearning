@@ -3,6 +3,7 @@ from pathlib import Path
 import torch
 
 from agent_data import get_agent_dir, get_num_classes
+from output_manager import atomic_torch_save
 from packet_consumer import _decode_dsdm_images
 
 
@@ -40,7 +41,7 @@ def _packet_training_images(args, packet):
     if packet.get("source") == "dsdm":
         images, _ = _decode_dsdm_images(args, packet)
         return images
-    if packet.get("source") in {"heuristic", "importance", "full_real"}:
+    if packet.get("source") in {"heuristic", "importance", "fast", "full_real"}:
         return packet["images"].detach().cpu()
     raise ValueError(f"不支持的 packet source: {packet.get('source')}")
 
@@ -82,7 +83,7 @@ def attach_sender_logits_to_packet(args, agent_id, packet_method):
     packet["sender_logit_dim"] = len(sender_class_ids)
     packet["sender_logit_num_images"] = int(sender_logits.shape[0])
     packet["sender_logit_dtype"] = "float16"
-    torch.save(packet, packet_path)
+    atomic_torch_save(packet, packet_path)
     print(
         f"[attach_logits] agent={agent_id} method={packet_method} "
         f"shape={tuple(packet['sender_logits'].shape)} path={packet_path}"

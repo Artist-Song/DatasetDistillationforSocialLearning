@@ -1,0 +1,90 @@
+project:
+  name: cross_arch_distill_eval
+  stage: resnet18_self_distill
+  output_root: ./outputs
+  run_name: cross_arch_distill_resnet18_cls2549_ipc10
+
+dataset:
+  name: cifar100
+  data_dir: ./data
+  num_classes: 100
+  image_size: 32
+
+# ResNet-18 自蒸馏，classes 25-49，IPC=10
+# teacher bank 来自 seed2 agent_1 (ResNet-18, 10个guide模型)
+# f_idx = 5 = avgpool+flatten，即 logits 前一层 [B,512]
+model_pool:
+  default: resnet18
+  models:
+    resnet18:
+      family: resnet
+      depth: 18
+      norm_type: batch
+      distillation:
+        f_idx: "5"
+        lr_img: 0.01
+        niter: 10000
+        pretrain_dir: ./outputs/cifar100_4agent_25cls_hetero6arch_ipc10_seed2/agents/agent_1/checkpoints
+
+distillation:
+  method: dsdm
+  ipc: 10
+  factor: 2
+  init: mix
+  decode_type: single
+  aug_type: color_crop_cutout
+  match: semantic
+  metric: mse
+  f_idx: "5"
+  niter: 10000
+  lr_img: 0.01
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  smooth_iter: 2000
+  cov_weight: 50.0
+  h_p_weight: 0.2
+  smooth_factor: 0.99
+  pretrained_model_number: 10
+  pretrained_epochs: 20
+
+selection:
+  enabled: true
+  methods:
+    - heuristic
+  heuristic:
+    strategy: random_per_class
+
+packet:
+  enabled: true
+  format: hard_label_images
+
+communication:
+  enabled: false
+  protocol: none
+
+agents:
+  num_agents: 1
+  num_classes: 100
+  class_split:
+    agent_0: [25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49]
+  model_split:
+    agent_0: resnet18
+
+social_learning:
+  receiver:
+    epochs: 0
+    lr: 0.01
+    lambda_fr: 0.0
+
+logits:
+  enabled: false
+
+evaluation:
+  enabled: false
+
+runtime:
+  seed: 0
+  workers: 8
+  device: cuda
+  gpu_id: 0

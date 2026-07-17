@@ -132,6 +132,22 @@ parser.add_argument('--time', action='store_true', help='measuring time for each
 parser.add_argument('--cov_weight', default=50.0, type=float, help='semantic weight')
 parser.add_argument('--h_p_weight', default=0.2, type=float, help='historical prototype weight')
 parser.add_argument('--smooth_factor', default=0.99, type=float, help='smoothing factor')
+parser.add_argument('--pcbn_enabled',
+                    type=str2bool,
+                    default=False,
+                    help='enable optional per-class BatchNorm statistic regularization')
+parser.add_argument('--pcbn_weight',
+                    default=0.0,
+                    type=float,
+                    help='weight for optional per-class BatchNorm statistic regularization')
+parser.add_argument('--pcbn_layers',
+                    default='all',
+                    type=str,
+                    help='comma separated BN layer names/indices for PCBN, or all')
+parser.add_argument('--pcbn_normalize_layers',
+                    type=str2bool,
+                    default=True,
+                    help='average PCBN loss over selected BN layers')
 parser.add_argument('--epochs', default=1500, type=int, help='number of test epochs')
 
 parser.add_argument('-i', '--ipc', type=int, default=-1, help='number of condensed data per class')
@@ -179,7 +195,11 @@ parser.add_argument('--smooth_iter', type=int, default=2000, help='number of sta
 parser.add_argument('--evaluate_iter',
                     type=int,
                     default=100,
-                    help='number of outer iteration evaluating the performance of distilled data')
+                    help='legacy fixed evaluation interval when evaluate_iterations is empty')
+parser.add_argument('--evaluate_iterations',
+                    type=str,
+                    default='100,500,1000,2000,3000,5000,7500,10000',
+                    help='comma-separated full-evaluation checkpoints; use legacy for evaluate_iter')
 
 
 parser.add_argument('--batch_real',
@@ -284,6 +304,8 @@ if args.net_type == 'convnet':
 modeltag = f'{args.net_type}{args.depth}'
 if args.net_type == 'resnet_ap':
     modeltag = f'resnet{args.depth}ap'
+if args.net_type == 'resnet_cifar_standard':
+    modeltag = f'resnet{args.depth}_cifar_w1'
 if args.net_type == 'convnet':
     modeltag = f'conv{args.depth}'
 if args.norm_type == 'instance':

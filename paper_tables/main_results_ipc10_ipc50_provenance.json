@@ -1,0 +1,591 @@
+[
+  {
+    "id": "one_resnet_ours_ipc10",
+    "title": "Ours",
+    "role": "main",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 50,
+    "ipc": 10,
+    "packet": "Distilled images",
+    "soft_labels": "Sender expert logits",
+    "protocol": "one-ResNet self-guided DSDM",
+    "comparability_group": "one_resnet_ipc10_image_budget",
+    "source": {
+      "type": "pipeline",
+      "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10/metrics/social_results.csv",
+      "expected_seeds": [
+        0,
+        1,
+        2
+      ],
+      "method": "DSDM_LOGIT",
+      "receiver_key": "receiver_agent",
+      "expected_receivers": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "metrics": {
+        "global": "acc_global_after",
+        "new": "acc_new_after",
+        "expert": "acc_expert_after",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 3,
+    "global_mean": 32.781666666666666,
+    "global_std": 0.2940828492486808,
+    "new_mean": 29.106666666666666,
+    "new_std": 0.34670939907566356,
+    "expert_mean": 43.80666666666667,
+    "expert_std": 0.6897503574160414,
+    "forgetting_mean": 23.236666666666665,
+    "forgetting_std": 0.6003517487458694,
+    "expected_seeds": 3,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc10/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc10/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc10/metrics/social_results.csv"
+    ]
+  },
+  {
+    "id": "one_resnet_ours_ipc50",
+    "title": "Ours",
+    "role": "main",
+    "status": "interim",
+    "paper_eligible": true,
+    "allow_partial": true,
+    "table_section": "ipc",
+    "table_order": 50,
+    "ipc": 50,
+    "packet": "Distilled images",
+    "soft_labels": "Sender expert logits",
+    "protocol": "one-ResNet self-guided DSDM",
+    "comparability_group": "one_resnet_ipc50_image_budget",
+    "caveat": "Interim until seed1 has four receiver rows.",
+    "source": {
+      "type": "pipeline",
+      "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50/metrics/social_results.csv",
+      "expected_seeds": [
+        0,
+        1,
+        2
+      ],
+      "method": "DSDM_LOGIT",
+      "receiver_key": "receiver_agent",
+      "expected_receivers": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "metrics": {
+        "global": "acc_global_after",
+        "new": "acc_new_after",
+        "expert": "acc_expert_after",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 2,
+    "global_mean": 35.6,
+    "global_std": 0.5625,
+    "new_mean": 33.48166666666667,
+    "new_std": 0.5550000000000033,
+    "expert_mean": 41.955,
+    "expert_std": 0.5850000000000009,
+    "forgetting_mean": 25.139999999999997,
+    "forgetting_std": 0.870000000000001,
+    "expected_seeds": 3,
+    "missing_seeds": [
+      1
+    ],
+    "actual_status": "interim",
+    "source_files": [
+      "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc50/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc50/metrics/social_results.csv"
+    ]
+  },
+  {
+    "id": "one_resnet_heuristic_ipc10",
+    "title": "Heuristic",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 30,
+    "ipc": 10,
+    "packet": "Random real images",
+    "soft_labels": "No",
+    "protocol": "hard labels, factor 1",
+    "comparability_group": "one_resnet_ipc10_image_budget",
+    "source": {
+      "type": "pipeline",
+      "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10_heuristic_hard/metrics/social_results.csv",
+      "expected_seeds": [
+        0,
+        1,
+        2
+      ],
+      "method": "HEURISTIC",
+      "receiver_key": "receiver_agent",
+      "expected_receivers": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "metrics": {
+        "global": "acc_global_after",
+        "new": "acc_new_after",
+        "expert": "acc_expert_after",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 3,
+    "global_mean": 22.347499999999997,
+    "global_std": 0.13642763649642267,
+    "new_mean": 18.136666666666667,
+    "new_std": 0.3307343120772105,
+    "expert_mean": 34.98,
+    "expert_std": 0.725304533741976,
+    "forgetting_mean": 32.06333333333333,
+    "forgetting_std": 0.4865068230650941,
+    "expected_seeds": 3,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc10_heuristic_hard/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc10_heuristic_hard/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc10_heuristic_hard/metrics/social_results.csv"
+    ]
+  },
+  {
+    "id": "one_resnet_heuristic_ipc50",
+    "title": "Heuristic",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 30,
+    "ipc": 50,
+    "packet": "Random real images",
+    "soft_labels": "No",
+    "protocol": "hard labels, factor 1",
+    "comparability_group": "one_resnet_ipc50_image_budget",
+    "source": {
+      "type": "pipeline",
+      "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50_heuristic_hard/metrics/social_results.csv",
+      "expected_seeds": [
+        0,
+        1,
+        2
+      ],
+      "method": "HEURISTIC",
+      "receiver_key": "receiver_agent",
+      "expected_receivers": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "metrics": {
+        "global": "acc_global_after",
+        "new": "acc_new_after",
+        "expert": "acc_expert_after",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 3,
+    "global_mean": 32.575,
+    "global_std": 0.5046327047137036,
+    "new_mean": 29.24222222222222,
+    "new_std": 0.8049169882818299,
+    "expert_mean": 42.57333333333333,
+    "expert_std": 0.8701085500607875,
+    "forgetting_mean": 24.47,
+    "forgetting_std": 0.6796077299933165,
+    "expected_seeds": 3,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc50_heuristic_hard/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc50_heuristic_hard/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc50_heuristic_hard/metrics/social_results.csv"
+    ]
+  },
+  {
+    "id": "one_resnet_fast_ipc10",
+    "title": "FAST",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 40,
+    "ipc": 10,
+    "packet": "Selected real images",
+    "soft_labels": "No",
+    "protocol": "official pixels/per-class/minmax, hard labels",
+    "comparability_group": "one_resnet_ipc10_image_budget",
+    "source": {
+      "type": "pipeline",
+      "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10_fast/metrics/social_results.csv",
+      "expected_seeds": [
+        0,
+        1,
+        2
+      ],
+      "method": "FAST",
+      "receiver_key": "receiver_agent",
+      "expected_receivers": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "metrics": {
+        "global": "acc_global_after",
+        "new": "acc_new_after",
+        "expert": "acc_expert_after",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 3,
+    "global_mean": 20.294999999999998,
+    "global_std": 0.3129363620077847,
+    "new_mean": 15.578888888888889,
+    "new_std": 0.15847264826118637,
+    "expert_mean": 34.443333333333335,
+    "expert_std": 1.0024082113701092,
+    "forgetting_mean": 32.6,
+    "forgetting_std": 1.0136403043815223,
+    "expected_seeds": 3,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc10_fast/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc10_fast/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc10_fast/metrics/social_results.csv"
+    ]
+  },
+  {
+    "id": "one_resnet_fast_ipc50",
+    "title": "FAST",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 40,
+    "ipc": 50,
+    "packet": "Selected real images",
+    "soft_labels": "No",
+    "protocol": "official pixels/per-class/minmax, hard labels",
+    "comparability_group": "one_resnet_ipc50_image_budget",
+    "source": {
+      "type": "pipeline",
+      "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50_fast/metrics/social_results.csv",
+      "expected_seeds": [
+        0,
+        1,
+        2
+      ],
+      "method": "FAST",
+      "receiver_key": "receiver_agent",
+      "expected_receivers": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "metrics": {
+        "global": "acc_global_after",
+        "new": "acc_new_after",
+        "expert": "acc_expert_after",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 3,
+    "global_mean": 31.058333333333334,
+    "global_std": 0.3577262298959296,
+    "new_mean": 27.176666666666666,
+    "new_std": 0.46419185050372663,
+    "expert_mean": 42.70333333333334,
+    "expert_std": 0.5833999961909117,
+    "forgetting_mean": 24.34,
+    "forgetting_std": 0.4181706190858783,
+    "expected_seeds": 3,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc50_fast/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc50_fast/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc50_fast/metrics/social_results.csv"
+    ]
+  },
+  {
+    "id": "masc_complete_ipc10",
+    "title": "MASC-complete",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 10,
+    "ipc": 10,
+    "packet": "Real CC images",
+    "soft_labels": "Teacher KD",
+    "protocol": "homogeneous official Netwider; CC + RA + HFE; model interaction",
+    "comparability_group": "adapted_baseline_ipc10",
+    "caveat": "Single seed and about 452 MB model-parameter interaction.",
+    "source": {
+      "type": "average_row",
+      "path": "external_baselines/outputs/masc_complete/seed0_10/social_results.csv",
+      "average_key": "agent_id",
+      "average_value": "avg",
+      "metrics": {
+        "global": "acc_global",
+        "new": "acc_new",
+        "expert": "acc_expert",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 1,
+    "expected_seeds": 1,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "external_baselines/outputs/masc_complete/seed0_10/social_results.csv"
+    ],
+    "global_mean": 9.9575,
+    "global_std": 0.0,
+    "new_mean": 2.76,
+    "new_std": 0.0,
+    "expert_mean": 31.549999999999997,
+    "expert_std": 0.0,
+    "forgetting_mean": 39.69,
+    "forgetting_std": 0.0
+  },
+  {
+    "id": "masc_complete_ipc50",
+    "title": "MASC-complete",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 10,
+    "ipc": 50,
+    "packet": "Real CC images",
+    "soft_labels": "Teacher KD",
+    "protocol": "homogeneous official Netwider; CC + RA + HFE; model interaction",
+    "comparability_group": "adapted_baseline_ipc50",
+    "caveat": "Single seed and about 452 MB model-parameter interaction.",
+    "source": {
+      "type": "average_row",
+      "path": "external_baselines/outputs/masc_complete/seed0_50/social_results.csv",
+      "average_key": "agent_id",
+      "average_value": "avg",
+      "metrics": {
+        "global": "acc_global",
+        "new": "acc_new",
+        "expert": "acc_expert",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 1,
+    "expected_seeds": 1,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "external_baselines/outputs/masc_complete/seed0_50/social_results.csv"
+    ],
+    "global_mean": 22.8125,
+    "global_std": 0.0,
+    "new_mean": 14.786666666666667,
+    "new_std": 0.0,
+    "expert_mean": 46.88999999999999,
+    "expert_std": 0.0,
+    "forgetting_mean": 24.35,
+    "forgetting_std": 0.0
+  },
+  {
+    "id": "desa_cil_ipc10",
+    "title": "DeSA-CIL",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 20,
+    "ipc": 10,
+    "packet": "Synthetic anchors",
+    "soft_labels": "Owner KD",
+    "protocol": "owner-aware class-incremental adaptation, seed0 one-ResNet",
+    "comparability_group": "adapted_baseline_ipc10",
+    "caveat": "Single seed; iterative owner logits are additional communication.",
+    "source": {
+      "type": "average_row",
+      "path": "external_baselines/outputs/desa_cil/cifar100_4agent_25cls_one_resnet_seed0_ipc10/social_results.csv",
+      "average_key": "receiver",
+      "average_value": "avg",
+      "metrics": {
+        "global": "acc_global",
+        "new": "acc_new",
+        "expert": "acc_expert",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 1,
+    "expected_seeds": 1,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "external_baselines/outputs/desa_cil/cifar100_4agent_25cls_one_resnet_seed0_ipc10/social_results.csv"
+    ],
+    "global_mean": 19.535,
+    "global_std": 0.0,
+    "new_mean": 4.243333333333333,
+    "new_std": 0.0,
+    "expert_mean": 65.41,
+    "expert_std": 0.0,
+    "forgetting_mean": 0.5299999999999994,
+    "forgetting_std": 0.0
+  },
+  {
+    "id": "desa_cil_ipc50",
+    "title": "DeSA-CIL",
+    "role": "baseline",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "ipc",
+    "table_order": 20,
+    "ipc": 50,
+    "packet": "Synthetic anchors",
+    "soft_labels": "Owner KD",
+    "protocol": "owner-aware class-incremental adaptation, seed0 one-ResNet",
+    "comparability_group": "adapted_baseline_ipc50",
+    "caveat": "Single seed; iterative owner logits are additional communication.",
+    "source": {
+      "type": "average_row",
+      "path": "external_baselines/outputs/desa_cil/cifar100_4agent_25cls_one_resnet_seed0_ipc50/social_results.csv",
+      "average_key": "receiver",
+      "average_value": "avg",
+      "metrics": {
+        "global": "acc_global",
+        "new": "acc_new",
+        "expert": "acc_expert",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 1,
+    "expected_seeds": 1,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "external_baselines/outputs/desa_cil/cifar100_4agent_25cls_one_resnet_seed0_ipc50/social_results.csv"
+    ],
+    "global_mean": 15.0225,
+    "global_std": 0.0,
+    "new_mean": 0.9633333333333333,
+    "new_std": 0.0,
+    "expert_mean": 57.2,
+    "expert_std": 0.0,
+    "forgetting_mean": 8.739999999999997,
+    "forgetting_std": 0.0
+  },
+  {
+    "id": "one_resnet_full_real",
+    "title": "Full Real",
+    "role": "oracle",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "validation",
+    "table_order": 10,
+    "packet": "All real images",
+    "soft_labels": "No",
+    "protocol": "one-ResNet heterogeneous receivers; 37,500 external images/receiver",
+    "comparability_group": "one_resnet_full_data",
+    "source": {
+      "type": "pipeline",
+      "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc10_fullreal/metrics/social_results.csv",
+      "expected_seeds": [
+        0,
+        1,
+        2
+      ],
+      "method": "FULL_REAL",
+      "receiver_key": "receiver_agent",
+      "expected_receivers": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "metrics": {
+        "global": "acc_global_after",
+        "new": "acc_new_after",
+        "expert": "acc_expert_after",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 3,
+    "global_mean": 51.16083333333333,
+    "global_std": 0.31692752413691716,
+    "new_mean": 50.4,
+    "new_std": 0.4747943024401511,
+    "expert_mean": 53.443333333333335,
+    "expert_std": 0.4228737662970151,
+    "forgetting_mean": 13.599999999999996,
+    "forgetting_std": 0.18991226044325524,
+    "expected_seeds": 3,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc10_fullreal/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc10_fullreal/metrics/social_results.csv",
+      "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc10_fullreal/metrics/social_results.csv"
+    ]
+  },
+  {
+    "id": "masc_full_validation",
+    "title": "MASC Full",
+    "role": "oracle",
+    "status": "complete",
+    "paper_eligible": true,
+    "table_section": "validation",
+    "table_order": 20,
+    "packet": "Full collaboration data",
+    "soft_labels": "Teacher KD",
+    "protocol": "homogeneous official Netwider; validation gate",
+    "comparability_group": "masc_full_data",
+    "caveat": "Not comparable to one-ResNet Full Real as a method ranking.",
+    "source": {
+      "type": "average_row",
+      "path": "external_baselines/outputs/masc_complete/seed0_full/social_results.csv",
+      "average_key": "agent_id",
+      "average_value": "avg",
+      "metrics": {
+        "global": "acc_global",
+        "new": "acc_new",
+        "expert": "acc_expert",
+        "forgetting": "forgetting"
+      }
+    },
+    "seeds": 1,
+    "expected_seeds": 1,
+    "missing_seeds": [],
+    "actual_status": "complete",
+    "source_files": [
+      "external_baselines/outputs/masc_complete/seed0_full/social_results.csv"
+    ],
+    "global_mean": 65.43,
+    "global_std": 0.0,
+    "new_mean": 65.03333333333333,
+    "new_std": 0.0,
+    "expert_mean": 66.62,
+    "expert_std": 0.0,
+    "forgetting_mean": 4.619999999999997,
+    "forgetting_std": 0.0
+  }
+]

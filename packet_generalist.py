@@ -13,6 +13,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 from agent_data import get_agent_class_split, get_agent_dir, get_num_classes
+from output_manager import atomic_torch_save
 from packet_consumer import consume_packet_for_training
 
 
@@ -31,6 +32,8 @@ def _refresh_model_metadata(args):
         args.modeltag = f"resnet{args.depth}ap"
     elif args.net_type == "convnet":
         args.modeltag = f"conv{args.depth}"
+    elif args.net_type == "resnet_cifar_standard":
+        args.modeltag = f"resnet{args.depth}_cifar_w1"
     else:
         args.modeltag = f"{args.net_type}{args.depth}"
     if args.norm_type == "instance":
@@ -307,7 +310,7 @@ def attach_generalist_logits_to_packets(cfg, base_args, packet_method, only_agen
         packet["generalist_logit_dtype"] = "float16"
         packet["generalist_model"] = str(getattr(g_args, "model_name", ""))
         packet["generalist_checkpoint"] = str(ckpt_path)
-        torch.save(packet, packet_path)
+        atomic_torch_save(packet, packet_path)
         print(
             f"[attach_generalist_logits] agent={agent_id} method={packet_method} "
             f"shape={tuple(packet['generalist_logits'].shape)} path={packet_path}"

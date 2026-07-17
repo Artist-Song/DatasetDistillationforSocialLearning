@@ -81,6 +81,8 @@ def _refresh_model_metadata(args):
         args.modeltag = f"resnet{args.depth}ap"
     elif args.net_type == "convnet":
         args.modeltag = f"conv{args.depth}"
+    elif args.net_type == "resnet_cifar_standard":
+        args.modeltag = f"resnet{args.depth}_cifar_w1"
     else:
         args.modeltag = f"{args.net_type}{args.depth}"
     if args.norm_type == "instance":

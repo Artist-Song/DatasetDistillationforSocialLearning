@@ -1,307 +1,230 @@
 # PROJECT_SPEC.md
 
-## 项目名称
+最后更新：`2026-07-17`
 
-```text
-DatasetDistillationforSocialLearning
-```
+本文件是项目研究定位、当前实验协议、最优超参数和结果解释的唯一事实来源。
+运行级结果明细见 `RESULTS.md`，历史过程见 `EXPERIMENT_LOG.md`。
 
-## 课题名称
+## 项目定位
 
-中文：
+项目名称：`DatasetDistillationforSocialLearning`
 
-```text
-面向异构社会化学习的高知识密度蒸馏通信包构建方法
-```
-
-英文：
+暂定题目：
 
 ```text
 Distilled Knowledge Packets for Communication-Efficient Heterogeneous Socialized Learning
 ```
 
----
+本文研究 class-disjoint agents 如何在架构异构和通信受限条件下，通过输入空间
+knowledge packet 保持自身 expert knowledge 并学习其他 agent 的 non-expert classes。
+通信对象是 distilled images 及其可选 soft annotations，不是模型参数、梯度或中间特征。
 
-## 研究背景
+这不是模型聚合式联邦学习：当前任务没有中心服务器平均参数、同步全局模型或同构梯度聚合。
 
-社会化学习关注多个智能体之间通过交互实现能力增长。每个 agent 初始只掌握一部分 expert classes，社会化学习后需要获得其他 agent 的互补知识，同时尽量保持自身原有 expert knowledge。
-
-本项目关注的核心问题：
-
-```text
-在模型异构和通信受限同时存在的社会化学习场景中，agent 之间应该传递什么形式的知识？
-```
-
-传统参数、梯度和中间特征通信依赖具体网络结构，异构 agent 之间难以直接共享。相比之下，输入空间图像样本天然可以被不同结构模型读取和学习，更适合作为异构 agent 之间的共同通信载体。
-
-直接传输真实样本在低通信预算下存在信息覆盖不足的问题。本项目将数据集蒸馏（DSDM）引入社会化学习，将每个 agent 的局部专家知识压缩为少量 synthetic images，形成 distilled knowledge packet，兼顾异构兼容性和高知识密度通信。
-
----
-
-## 核心研究问题
+## 研究问题
 
 ```text
-Q1：如何构建一种异构模型均可学习的通信对象？
-Q2：如何在低通信预算下提高单位通信量中的知识密度？
-Q3：如何让 receiver 在吸收外部知识的同时保持自身 expert knowledge？
+RQ1  输入空间 packet 能否作为异构模型的共享知识接口？
+RQ2  DSDM 能否在相同 raw-image budget 下提高单位通信知识密度？
+RQ3  Receiver 能否在吸收新类时控制 expert forgetting？
+RQ4  Sender-specific packet quality 如何随 guide backbone 和通信预算变化？
 ```
 
-对应思路：
+核心指标：
 
 ```text
-A1：使用输入空间 image packet，而不是参数、梯度或特征。
-A2：使用数据集蒸馏生成 compact synthetic packet。
-A3：使用 expert initialization、FR loss 和可选 sender logits 缓解遗忘并增强知识吸收。
+acc_global   : 100 类全局准确率
+acc_new      : receiver 未拥有的 75 类准确率
+acc_expert   : receiver 原有 25 类准确率
+forgetting   : acc_expert_before - acc_expert_after
 ```
 
----
+## 当前唯一主实验
 
-## 方法概述
-
-方法由四个阶段组成。
-
-### 1. Local Expert Training
-
-每个 agent 只使用自己的 expert classes 训练本地专家模型。所有模型输出维度固定为 100，不重映射标签。
-
-### 2. Knowledge Packet Construction
-
-支持四种 packet 类型：
+### 数据与类别
 
 ```text
-DSDM        ：数据集蒸馏生成 synthetic image packet（目标方法）
-Heuristic   ：随机真实样本 subset packet（baseline）
-Importance  ：低置信度真实样本 subset packet（baseline）
-Full Real   ：sender 全部真实训练数据（oracle upper-bound，不是低通信方法）
+Dataset: CIFAR-100
+Agents: 4
+Class split: 4 × 25 class-disjoint expertise
+Global labels: 0-99, never remapped
+Classifier output: 100 for every model
+Train samples per sender: 25 × 500 = 12,500
 ```
 
-### 3. Optional Sender Logits Attachment
+```python
+agent_class_split = {
+    0: list(range(0, 25)),
+    1: list(range(25, 50)),
+    2: list(range(50, 75)),
+    3: list(range(75, 100)),
+}
+```
 
-在 image packet 基础上附加 sender expert-class logits。只保留 sender 自己 expert classes（25 个）上的输出，不保留 full 100-class logits。用于补充 soft decision information，增强 receiver 对外部类别的吸收能力。
+### one-ResNet 架构分配
 
-### 4. Receiver Social Training
+当前 no-VGG 设定中，每个 seed 恰好有一个 compact ResNet：
 
-receiver 读取 self packet + external packets，联合训练：
+| Seed | Agent 0 / 0-24 | Agent 1 / 25-49 | Agent 2 / 50-74 | Agent 3 / 75-99 |
+|---:|---|---|---|---|
+| 0 | AlexNet | ConvNet-3-w1.0 | ResNet-18 compact | ConvNet-4-w1.5 |
+| 1 | ConvNet-4-w1.5 | AlexNet | ResNet-10 compact | ConvNet-3-w1.0 |
+| 2 | AlexNet | ResNet-18 compact | ConvNet-3-w1.0 | ConvNet-4-w1.5 |
+
+配置 ID `resnet10/resnet18` 使用 CIFAR 3x3 stem、base width 32：
 
 ```text
-L = L_cls + lambda_fr * L_FR + lambda_kd * L_KD
-
-L_cls ：hard-label classification loss（self + external packet）
-L_FR  ：保持 receiver expert classes 上旧模型响应（expert init 时启用）
-L_KD  ：学习 external sender expert-class logits（有 logits 时启用）
+ResNet-10 compact: 1,252,100 parameters
+ResNet-18 compact: 2,820,740 parameters
 ```
 
----
+它们不是约 11M 参数的 canonical ResNet-18。`resnet_cifar_standard` 仅用于诊断。
 
-## 论文主实验设定（当前阶段）
+## 当前方法
 
-### 数据集与划分
+当前主方法是 sender-specific、backbone-aligned self-distillation：
 
 ```text
-Dataset  : CIFAR-100
-Agents   : 4
-Split    : class-disjoint，每 agent 25 个 expert classes，全局标签不重映射
-
-agent_0: classes 0–24
-agent_1: classes 25–49
-agent_2: classes 50–74
-agent_3: classes 75–99
+Sender private expert data
+→ locally trained guide pool using the sender task-backbone architecture
+→ DSDM condensation
+→ sender-specific distilled image packet
+→ sender expert-class logits
+→ heterogeneous receivers
 ```
 
-### Agent 架构（4arch 异构）
+每个 guide 只接触本 sender 的 25 类数据；不同 agent 不共享 guide 权重。统一 ConvNet
+packet encoder 是重要对照方向，但尚未成为当前主方法。
 
-本实验采用跨 family 异构设定，agent pool 包含 ConvNet、VGG 和 AlexNet 三种架构系列：
+### Logits
 
-| agent | 架构 | width/variant | 参数量 |
-|---|---|---|---|
-| 0 | ConvNet-3 | w1.0（DSDM 默认） | ~400K |
-| 1 | ConvNet-4 | w1.5 | ~2.4M |
-| 2 | VGG11-CIFAR | — | ~9.8M |
-| 3 | AlexNetCIFAR | — | ~7.0M |
+Logits 是 image packet 的增强注释：只保存 sender 25 个 expert classes 上的 logits，
+不保存 full 100-class logits、参数、梯度或 feature maps。Ours 指完整 `DSDM + Logits`；
+DSDM without logits 用于分离 synthetic image 和 soft annotation 的贡献。
 
-四个 agent 模型结构、参数形状、特征维度均不同，不能直接进行参数平均、梯度共享或特征对齐，符合异构社会化学习的实验前提。
+## 通信协议
 
-Config 文件：
+| IPC | Raw/sender | External raw/receiver | DSDM effective/receiver | Full Real 比例 |
+|---:|---:|---:|---:|---:|
+| 10 | 250 | 750 | 3,000 | 1/50 |
+| 50 | 1,250 | 3,750 | 15,000 | 1/10 |
+| Full Real | 12,500 | 37,500 | 37,500 | 1 |
 
-```text
-configs/main_cifar100_hetero4arch_ipc10.yaml
-configs/main_cifar100_hetero4arch_ipc50.yaml
-```
+DSDM `factor=2` 表示一张 raw image decode 为 4 张训练图；通信量始终按 raw image 统计。
 
-### 通信预算
-
-```text
-主实验：IPC = 10
-扩展实验：IPC = 50
-
-IPC=10 时每个 sender raw packet = 25 × 10 = 250 张
-IPC=50 时每个 sender raw packet = 25 × 50 = 1250 张
-（DSDM factor=2，decode 后 effective images 翻4倍，但通信量统计以 raw 计）
-```
-
-### 对比方法
-
-```text
-1. Expert Only（Before Social）    ：社会化前基线
-2. Full Real Social Transfer        ：通信充分上限（oracle）
-3. Heuristic Packet, IPC=10/50     ：随机真实样本核心集
-4. DSDM Packet, IPC=10/50          ：蒸馏 synthetic packet
-5. DSDM Packet + Logits, IPC=10/50 ：蒸馏 packet + sender expert logits
-```
-
-### 核心研究问题（实验层）
-
-```text
-1. 在低通信预算（IPC=10）下，DSDM 是否相比 Heuristic 展现更高知识密度？
-2. Sender logits 是否在 image packet 基础上进一步提升 new-class absorption？
-3. 不同架构 receiver（ConvNet / VGG / AlexNet）对 DSDM packet 的吸收能力是否不同？
-4. 是否存在明显 expert forgetting，需要调整 FR loss 或 receiver 训练策略？
-```
-
----
-
-## DSDM 配置约定
-
-### Feature Index 规则
-
-DSDM 蒸馏时使用 sender guide model 的最后一个非 logits 语义特征层（last_feature）。各架构的 `f_idx` 固定如下：
-
-| 架构 | f_idx | 特征 shape |
-|---|---|---|
-| ConvNet-3 | 2 | block3 output |
-| ConvNet-4 | 3 | block4 output |
-| VGG11-CIFAR | 10 | [B, 512] |
-| AlexNetCIFAR | 7 | [B, 512] |
-
-`f_idx` 由 `agent_data._refresh_model_metadata` 按 net_type 自动设置，每次修改 per-agent 模型配置后必须通过 dry-run 打印验证，确保 `f_idx` 与 `idx_from/idx_to` 同步更新。
+## 最优主实验超参数
 
 ### DSDM 公共参数
 
-```text
-factor       : 2
-decode_type  : single
-init         : mix（factor>1 时自动启用）
-match        : semantic
-metric       : mse
-aug_type     : color_crop_cutout
-pretrained_epochs : 20（teacher bank 固定使用 e20 版本）
-```
+| Parameter | Value |
+|---|---:|
+| niter | 10,000 |
+| factor | 2 |
+| init / decode | mix / single |
+| augmentation | color_crop_cutout |
+| match / metric | semantic / mse |
+| batch_real / batch_syn_max | 256 / 256 |
+| smooth_iter / smooth_factor | 2,000 / 0.99 |
+| cov_weight / h_p_weight | 50 / 0.2 |
+| guide pool | 10 models, 20 pretrain epochs |
+| evaluation checkpoints | legacy fixed schedule for current three seeds |
 
-### 各架构 DSDM 最优 Recipe（IPC=10，formal sweep）
+### Guide-specific DSDM 参数
 
-| 架构 | best_lr_img | best_iter | best_eval_acc | full_real_upper |
-|---|---|---|---|---|
-| ConvNet-3-w1.0 | 0.1 | 10000 | — | — |
-| ConvNet-4-w1.5 | 0.1 | 10000 | — | — |
-| VGG11-CIFAR | 0.02 | 10000 | 43.34 | 72.42 |
-| AlexNetCIFAR | 0.005 | 5000 | 46.00 | 74.43 |
+| Task backbone | f_idx / idx_from | lr_img |
+|---|---:|---:|
+| ConvNet-3 | 2 | 0.1 |
+| ConvNet-4 | 3 | 0.1 |
+| AlexNet | 7 | 0.005 |
+| ResNet-10/18 | 5 | 0.01 |
 
-VGG/AlexNet 的 teacher bank 路径：
+### Receiver 参数
 
-```text
-AlexNet:
-/root/autodl-tmp/outputs/dsdm_arch_recipe_cifar100_ipc10/pretrained_factor2_probe/e20/alexnet
+| IPC | Epochs | LR | lambda_fr | lambda_kd | T | Scheduler |
+|---:|---:|---:|---:|---:|---:|---|
+| 10 | 60 | 0.01 | 0.20 | 0.60 | 2 | multistep 39/51, gamma 0.2 |
+| 50 | 225 | 0.001 | 0.05 | 0.50 | 2 | none |
 
-VGG:
-/root/autodl-tmp/outputs/dsdm_arch_recipe_cifar100_ipc10/pretrained_factor2_probe_parallel/e20/vgg
-```
+Receiver 从 expert checkpoint 初始化并训练完整 backbone；当前 `self_data_mode=packet`，
+配置中的 `self_real_per_class=20` 不会产生 self-real replay（结果中 `self_real_images=0`）。
 
-每个 teacher bank 必须有 10 个 `cifar100_model_*.pth`，必须是 factor=2 / e20 版本。
+## Baseline 协议
 
-### 注意事项
+| Method | 主要通信对象 | Soft information | 当前用途 |
+|---|---|---|---|
+| Expert Only | none | none | before-social baseline |
+| Full Real | all real images | hard labels | communication oracle |
+| Heuristic | random real images | hard labels | primary image baseline |
+| FAST | selected real images | hard labels | coreset baseline |
+| MASC-complete | real CC images + model interaction | teacher KD | homogeneous social-learning baseline |
+| DeSA-CIL | synthetic anchors | iterative owner logits | adapted class-incremental baseline |
 
-- AlexNet/VGG 内部写死 BatchNorm，`norm_type` 字段仅用于记录，不动态切换。
-- 不要使用 torchvision ImageNet 版本的 AlexNet/VGG，本项目使用 CIFAR-100 32×32 定制版。
-- `lr_img=0.1` 对 VGG/AlexNet 均明显退化，禁止用于这两个架构。
-- 不要用 DSDM teacher 权重初始化 agent，teacher bank 仅用于蒸馏阶段。
+Heuristic 和 FAST 的监督/通信条件一致，可以直接比较 selection policy。MASC 使用同构
+Netwider 且约有 452 MB 参数交互；DeSA-CIL 使用 owner-aware 类增量适配。二者必须带脚注。
 
----
+## 当前正式结果
 
-## 历史实验记录（已完成，仅供参考）
+以下为 seed-level 4-agent mean 的 mean ± population std，单位为百分比。
 
-### 跨架构异构诊断（ConvNet / ResNet / ResNetAP，IPC=50）
+### IPC=10（complete, 3 seeds）
 
-旧设定使用 ConvNet-3 / ResNet-10 / ResNetAP-10 异构。主要发现：
+| Method | Global | New | Expert | Forgetting |
+|---|---:|---:|---:|---:|
+| Heuristic hard | 22.35 ± 0.14 | 18.14 ± 0.33 | 34.98 ± 0.73 | 32.06 ± 0.49 |
+| FAST | 20.30 ± 0.31 | 15.58 ± 0.16 | 34.44 ± 1.00 | 32.60 ± 1.01 |
+| Ours DSDM + Logits | **32.78 ± 0.29** | **29.11 ± 0.35** | **43.81 ± 0.69** | **23.24 ± 0.60** |
+| Full Real | 51.16 ± 0.32 | 50.40 ± 0.47 | 53.44 ± 0.42 | 13.60 ± 0.19 |
 
-- DSDM_LOGIT 相比 image-only 有提升；HEURISTIC_LOGIT 在 IPC=50 下竞争力强。
-- agent 2 存在严重 expert forgetting，暴露 receiver loss 需要调整。
-- ResNet/ResNetAP sender 中 DSDM 使用的 `idx_from=2` 对应 layer2 而非最后特征层，是异常主因之一。
+Ours 相对 Heuristic：global `+10.43`、new `+10.97`、expert `+8.83`、forgetting
+降低 `8.82`。该差值支持完整方法，但不能全部归因于 synthetic images，需结合 w/o logits。
 
-该设定已不作为主实验，相关 config 保留在 `configs/main_cifar100_logit.yaml`。
+### IPC=50（Ours interim）
 
-### Centralized Full Data Upper Bound
+| Method | Seeds | Global | New | Expert | Forgetting |
+|---|---:|---:|---:|---:|---:|
+| Heuristic hard | 3 | 32.58 ± 0.50 | 29.24 ± 0.80 | 42.57 ± 0.87 | 24.47 ± 0.68 |
+| FAST | 3 | 31.06 ± 0.36 | 27.18 ± 0.46 | 42.70 ± 0.58 | 24.34 ± 0.42 |
+| Ours DSDM + Logits | 2/3 | 35.60 ± 0.56 | 33.48 ± 0.56 | 41.96 ± 0.59 | 25.14 ± 0.87 |
 
-| 架构 | recipe | accuracy |
-|---|---|---|
-| ConvNet-3-IN | strict DSDM recipe | 65.24 |
-| ResNet-10-BN | CIFAR recipe | 72.08 |
-| ResNetAP-10-BN | CIFAR recipe | 73.47 |
+Ours IPC=50 在 seed1 完成前只能标记 interim，不能与三 seed baseline 写最终配对差值。
 
-结果文件：`outputs/cifar100_4agent_25cls_upper_bound/centralized_full/`
+### 最新外部 baseline（single seed）
 
-### ConvNet Family 异构实验（conv-3/conv-4 only，IPC=10/50）
+| Method | IPC | Global | New | Expert | Forgetting |
+|---|---:|---:|---:|---:|---:|
+| MASC-complete | 10 | 9.96 | 2.76 | 31.55 | 39.69 |
+| MASC-complete | 50 | 22.81 | 14.79 | 46.89 | 24.35 |
+| DeSA-CIL | 10 | 19.54 | 4.24 | 65.41 | 0.53 |
+| DeSA-CIL | 50 | 15.02 | 0.96 | 57.20 | 8.74 |
 
-过渡阶段实验，用于降低跨架构噪声并调优 receiver 超参数。已完成 DSDM 蒸馏与 receiver 调参，参考结果：
+MASC Full validation 为 `65.43 global / 65.03 new / 66.62 expert / 4.62 forgetting`；
+one-ResNet Full Real 三 seed为 `51.16 / 50.40 / 53.44 / 13.60`。两者协议不同，不能横向排序。
 
-```text
-IPC=10 best receiver: ep060 / lambda_fr=0.20 / lambda_kd=0.50 -> mean_global=33.905
-IPC=50 best receiver: ep250 / lambda_fr=0.05 / lambda_kd=0.50 -> mean_global=46.1825
-```
+## 重要中间证据
 
-相关结果目录：
-```text
-outputs/cifar100_4agent_25cls_conv_family_ipc10/
-outputs/cifar100_4agent_25cls_conv_family_ipc50/
-```
+以下实验不是无效结果，应在 registry 中保留为 `historical_evidence` 或 `diagnostic`：
 
----
+1. Conv-family IPC=10/50：证明 DSDM 低预算知识密度并形成 receiver 超参基础。
+2. all-ConvNet IPC=50：高预算通信与 receiver recipe 诊断。
+3. hetero4arch：暴露 VGG/AlexNet stability 问题和 feature-index 敏感性。
+4. hetero6arch：ConvNet-family packet 跨架构复用证据。
+5. Self-guided vs ConvNet-guided ResNet receiver 对照：说明 packet guide 与预算交互。
+6. Centralized upper bounds：ConvNet-3 65.24、ResNet-10 72.08、ResNetAP-10 73.47。
+7. ResNet compact/standard 与 feature-index 诊断：用于区分容量、recipe 和 packet 质量。
 
-## 代码修改原则
+大量 guardian/receiver sweep 只保留按同协议选出的最优配置及汇总，其余进入删除候选清单。
 
-1. 尽量复用现有 pipeline，不大规模重构 DSDM 源码。
-2. 新验证实验优先通过新增 packet method、config 和小模块完成。
-3. 所有新增函数和类必须有简短中文注释。
-4. 每次修改后至少运行 `py_compile` 和 `dry-run`。
-5. 修改 DSDM feature-index 逻辑时，必须同时验证 `f_idx` 与 `idx_from/idx_to`，并用 dry-run 打印每个 agent 的最终解析值。
-6. 不要覆盖已有可用结果；新实验必须使用新的 `run_name` 和输出目录。
-7. 修改前告知用户修改逻辑与方案，确认后执行。
-8. 不要强制 reset、rebase、clean，除非用户明确要求。
+## Tiny-ImageNet 计划（未实施）
 
-## 推荐 smoke test
+Tiny-ImageNet 是下一数据集扩展，不属于当前完成结果。计划使用 200 类、4 agents × 50
+class-disjoint expertise、全局 0-199 标签。Task backbone 首选标准 64x64 模型组合；必须先跑
+centralized upper bound。Tiny 实验需要同时比较 self-guided 与 ConvNet local encoder，最终
+以 packet quality、new-class absorption 和 expert stability 决定主消融结论。
 
-```bash
-python -m py_compile \
-  run_social_pipeline.py \
-  agent_data.py \
-  agent_trainer.py \
-  config_adapter.py \
-  output_manager.py \
-  packet_consumer.py \
-  packet_logits.py \
-  selection_methods.py \
-  social_trainer.py \
-  social_output_manager.py \
-  validate_packets.py \
-  run_centralized_full.py
-```
+## 结果选择与追溯
 
----
-
-## 当前状态与下一步
-
-**当前状态（2026-07-05）**
-
-- AlexNet/VGG 已完成代码适配（`DSDM/train.py`、`config_adapter.py`、`agent_data.py`）
-- 论文主实验 config 已建立（`hetero4arch_ipc10.yaml`、`hetero4arch_ipc50.yaml`）
-- per-agent f_idx、modeltag、lr_img dry-run 验证通过
-
-**下一步**
-
-```text
-1. 确认 VGG/AlexNet teacher bank 路径可访问（各 10 个 pth 文件）
-2. 运行 train_experts 阶段，验证 AlexNet/VGG expert 训练正常收敛
-3. 运行 distill_packets 阶段（IPC=10），验证 DSDM f_idx 特征匹配正确
-4. 完成 IPC=10 主实验全组对比（Heuristic / DSDM / DSDM+Logits）
-5. 复用经验启动 IPC=50 主实验
-6. 根据实验结果调整 VGG/AlexNet IPC=50 的 lr_img（当前沿用 IPC=10 最优值）
-```
+1. Registry 角色为 `main/baseline/ablation/diagnostic/historical_evidence/tuning/invalid`。
+2. 同协议优先最高 global；差值小于 0.5 时优先 new 更高且 forgetting 更低者。
+3. 每个正式数字必须记录 config、metrics、seed 数、packet guide 和 caveat。
+4. `RESULTS.md` 和 `paper_tables/` 是生成产物；原始事实来自 CSV 和 packet provenance。
+5. 活动实验状态写入 `docs/operations/current_status.md`，不写入 `AGENTS.md`。

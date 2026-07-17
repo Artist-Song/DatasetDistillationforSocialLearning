@@ -1,13 +1,15 @@
 import csv
 import json
+import os
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
 import torch
 
 
-PACKET_SOURCES = {"dsdm", "heuristic", "importance", "full_real"}
+PACKET_SOURCES = {"dsdm", "heuristic", "importance", "fast", "full_real"}
 GLOBAL_RESULT_FIELDS = [
     "run_name",
     "stage",
@@ -23,6 +25,35 @@ GLOBAL_RESULT_FIELDS = [
     "config_path",
     "time",
 ]
+
+
+def atomic_torch_save(payload, path):
+    """先写同目录临时文件再原子替换，避免破坏硬链接指向的历史 artifact。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, delete=False) as handle:
+        temp_path = Path(handle.name)
+    try:
+        torch.save(payload, temp_path)
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return path
+
+
+def atomic_copyfile(source, target):
+    """复制到同目录临时文件后原子替换目标。"""
+    source = Path(source)
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent, delete=False) as handle:
+        temp_path = Path(handle.name)
+    try:
+        shutil.copyfile(source, temp_path)
+        os.replace(temp_path, target)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return target
 
 
 def get_run_dir(args):
@@ -102,7 +133,7 @@ def save_best_synthetic(args, synset, best_acc, iteration):
         "dataset": args.dataset,
         "ipc": args.ipc,
     }
-    torch.save(payload, path)
+    atomic_torch_save(payload, path)
     return path
 
 
@@ -142,7 +173,7 @@ def save_packet(args, images, labels, class_ids, source, method, meta=None):
     }
     _validate_packet_payload(payload)
     path = get_packet_path(args, source)
-    torch.save(payload, path)
+    atomic_torch_save(payload, path)
     return path
 
 

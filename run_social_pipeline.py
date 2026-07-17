@@ -22,7 +22,12 @@ from packet_generalist import (
     train_packet_generalist,
 )
 from progress_timer import ProgressTimer
-from selection_methods import build_full_real_packet, build_heuristic_packet, build_importance_packet
+from selection_methods import (
+    build_fast_packet,
+    build_full_real_packet,
+    build_heuristic_packet,
+    build_importance_packet,
+)
 from social_output_manager import (
     append_social_result,
     prepare_social_output_dirs,
@@ -76,7 +81,12 @@ def parse_cli():
         ],
         help="运行阶段",
     )
-    parser.add_argument("--packet-method", default="dsdm", choices=["dsdm", "heuristic", "importance", "full_real"], help="packet 方法")
+    parser.add_argument(
+        "--packet-method",
+        default="dsdm",
+        choices=["dsdm", "heuristic", "importance", "fast", "full_real"],
+        help="packet 方法",
+    )
     parser.add_argument("--init-mode", default="expert", choices=["expert", "scratch"], help="receiver 初始化方式")
     parser.add_argument("--dry-run", action="store_true", help="只打印计划，不启动训练")
     parser.add_argument("--resume", action="store_true", help="已存在输出时尽量跳过")
@@ -102,6 +112,11 @@ def _print_dry_run(args, cli):
     print(f"num_agents: {len(class_split)}")
     print(f"agents: {get_agent_ids(args, cli.only_agent)}")
     print(f"receivers: {get_receiver_ids(args, cli.only_receiver)}")
+    if cli.stage in {"train_receivers", "all"}:
+        receiver_cfg = cfg.get("social_learning", {}).get("receiver", {})
+        print(f"receiver self_data_mode: {receiver_cfg.get('self_data_mode', 'packet')}")
+        print(f"receiver self_real_per_class: {receiver_cfg.get('self_real_per_class', 0)}")
+        print(f"receiver self_class_weight: {receiver_cfg.get('self_class_weight', 1.0)}")
     for agent_id, classes in class_split.items():
         agent_args = build_agent_args(cfg, cli.config, agent_id)
         print(
@@ -199,10 +214,10 @@ def _load_agent_guide_models(args, agent_id):
 
 
 def _stage_build_selection_packets(cfg, config_path, base_args, cli):
-    """为每个 agent 构建 Heuristic 或 Importance 核心集 packet。"""
+    """为每个 agent 构建真实图选择方法的 packet。"""
     from agent_data import get_agent_train_dataset
 
-    if cli.packet_method not in {"heuristic", "importance", "full_real"}:
+    if cli.packet_method not in {"heuristic", "importance", "fast", "full_real"}:
         print("[build_selection_packets] dsdm packet 由 distill_packets 生成，此阶段跳过。")
         return
     agent_ids = get_agent_ids(base_args, cli.only_agent)
@@ -211,8 +226,11 @@ def _stage_build_selection_packets(cfg, config_path, base_args, cli):
     for index, agent_id in enumerate(agent_ids, start=1):
         agent_args = build_agent_args(cfg, config_path, agent_id)
         train_set = get_agent_train_dataset(agent_args, agent_id, normalize=False)
+        packet_meta = None
         if cli.packet_method == "heuristic":
             images, labels, class_ids = build_heuristic_packet(agent_args, train_set)
+        elif cli.packet_method == "fast":
+            images, labels, class_ids, packet_meta = build_fast_packet(agent_args, train_set)
         elif cli.packet_method == "full_real":
             images, labels, class_ids = build_full_real_packet(agent_args, train_set)
         else:
@@ -220,13 +238,23 @@ def _stage_build_selection_packets(cfg, config_path, base_args, cli):
             images, labels, class_ids = build_importance_packet(agent_args, train_set, guide_models)
         agent_args.output_root = str(get_agent_dir(agent_args, agent_id))
         agent_args.run_name = ""
-        save_packet(agent_args, images, labels, class_ids, source=cli.packet_method, method=cli.packet_method.upper())
+        save_packet(
+            agent_args,
+            images,
+            labels,
+            class_ids,
+            source=cli.packet_method,
+            method=cli.packet_method.upper(),
+            meta=packet_meta,
+        )
         progress.update(index, extra=f"agent={agent_id}")
     _stage_done("build_selection_packets")
 
 
 def _stage_attach_logits(cfg, config_path, base_args, cli):
     """为指定 packet method 的 agent packets 附加 sender logits。"""
+    if cli.packet_method == "fast":
+        raise ValueError("FAST baseline 只使用选中的真实图和 hard labels，不附加 logits。")
     agent_ids = get_agent_ids(base_args, cli.only_agent)
     _stage_banner("attach_logits", f"method={cli.packet_method} agents={agent_ids}")
     progress = ProgressTimer(len(agent_ids), name="attach_logits")
@@ -294,10 +322,14 @@ def _stage_train_receivers(base_args, cli):
         receiver_args.receiver_epochs = receiver_cfg.get("epochs", receiver_args.epochs)
         receiver_args.receiver_lr = receiver_cfg.get("lr", receiver_args.lr)
         receiver_args.lambda_fr = receiver_cfg.get("lambda_fr", 0.05)
+        receiver_args.self_data_mode = str(receiver_cfg.get("self_data_mode", "packet"))
+        receiver_args.self_real_per_class = int(receiver_cfg.get("self_real_per_class", 0) or 0)
         receiver_args.self_class_weight = float(receiver_cfg.get("self_class_weight", 1.0))
         receiver_args.receiver_scheduler = str(receiver_cfg.get("scheduler", "none"))
         receiver_args.receiver_scheduler_milestones = receiver_cfg.get("scheduler_milestones", [])
         receiver_args.receiver_scheduler_gamma = float(receiver_cfg.get("scheduler_gamma", 0.2))
+        receiver_args.receiver_augment = bool(receiver_cfg.get("augment", False))
+        receiver_args.freeze_bn_stats = bool(receiver_cfg.get("freeze_bn_stats", False))
         receiver_args.lambda_schedule = str(receiver_cfg.get("lambda_schedule", "none"))
         receiver_args.lambda_schedule_switch = float(receiver_cfg.get("lambda_schedule_switch", 0.7))
         receiver_args.lambda_fr_late_multiplier = float(receiver_cfg.get("lambda_fr_late_multiplier", 1.5))
@@ -306,6 +338,8 @@ def _stage_train_receivers(base_args, cli):
         communication_cfg = cfg.get("communication", {})
         receiver_args.communication_mode = communication_cfg.get("mode", "direct")
         receiver_args.use_logits = bool(communication_cfg.get("use_sender_logits", logits_cfg.get("enabled", False)))
+        if cli.packet_method == "fast":
+            receiver_args.use_logits = False
         receiver_args.use_generalist_logits = bool(communication_cfg.get("use_generalist_logits", False))
         receiver_args.kd_mix_beta = float(communication_cfg.get("kd_mix_beta", 0.5))
         receiver_args.lambda_kd = float(logits_cfg.get("lambda_kd", 0.5)) if (receiver_args.use_logits or receiver_args.use_generalist_logits) else 0.0
@@ -315,7 +349,10 @@ def _stage_train_receivers(base_args, cli):
         receiver_args.use_fr = cli.init_mode == "expert"
         if cli.init_mode == "scratch":
             receiver_args.lambda_fr = 0.0
-        print(f"[train_receivers] receiver={receiver_id} classes={receiver_args.active_class_ids}")
+        print(
+            f"[train_receivers] receiver={receiver_id} classes={receiver_args.active_class_ids} "
+            f"self_data_mode={receiver_args.self_data_mode} self_real_per_class={receiver_args.self_real_per_class}"
+        )
         result = SocialTrainer(receiver_args, receiver_id, rows).train()
         append_social_result(base_args, result)
         progress.update(index, extra=f"receiver={receiver_id}")

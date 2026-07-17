@@ -110,13 +110,37 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
     if resume and not overwrite and _all_guides_exist(args, ckpt_dir):
         return _select_best_expert(args, agent_id, ckpt_dir, device)
 
-    dataset = get_agent_train_dataset(args, agent_id, normalize=True)
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.workers)
+    expert_batch_size = int(getattr(args, "expert_batch_size", args.batch_size))
+    dataset = get_agent_train_dataset(
+        args,
+        agent_id,
+        normalize=True,
+        augment=bool(getattr(args, "expert_augment", False)),
+    )
+    loader = DataLoader(dataset, batch_size=expert_batch_size, shuffle=True, num_workers=args.workers)
     if int(args.pretrained_model_number) <= 0:
         raise RuntimeError("pretrained_model_number 必须大于 0")
     for model_idx in range(int(args.pretrained_model_number)):
         model = define_model(args, get_num_classes(args)).to(device)
-        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        expert_lr = float(getattr(args, "expert_lr", args.lr))
+        optimizer = optim.SGD(model.parameters(), lr=expert_lr, momentum=args.momentum, weight_decay=args.weight_decay)
+        scheduler_name = str(getattr(args, "expert_scheduler", "none")).lower()
+        if scheduler_name == "multistep":
+            milestones = getattr(args, "expert_scheduler_milestones", None) or [
+                int(args.pretrained_epochs) // 2,
+                3 * int(args.pretrained_epochs) // 4,
+            ]
+            scheduler = optim.lr_scheduler.MultiStepLR(
+                optimizer,
+                milestones=[int(v) for v in milestones],
+                gamma=float(getattr(args, "expert_scheduler_gamma", 0.1)),
+            )
+        elif scheduler_name == "cosine":
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=int(args.pretrained_epochs))
+        elif scheduler_name in {"", "none"}:
+            scheduler = None
+        else:
+            raise ValueError(f"不支持的 expert scheduler: {scheduler_name}")
         criterion = nn.CrossEntropyLoss()
         model.train()
         for _ in range(int(args.pretrained_epochs)):
@@ -127,6 +151,8 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
                 loss = criterion(model(images), labels)
                 loss.backward()
                 optimizer.step()
+            if scheduler is not None:
+                scheduler.step()
         guide_path = ckpt_dir / f"guide_model_{model_idx}.pt"
         torch.save(model.state_dict(), guide_path)
         del model

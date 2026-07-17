@@ -1,0 +1,12 @@
+size_bytes	path	note
+8380	outputs/cifar100_4agent_25cls_ipc50_logit/metrics/.ipynb_checkpoints/packet_integrity_dsdm-checkpoint.json	cache/temp/corrupt artifact removed
+2723	outputs/cifar100_4agent_25cls_ipc50_logit/metrics/.ipynb_checkpoints/social_results-checkpoint.csv	cache/temp/corrupt artifact removed
+919	outputs/cifar100_4agent_25cls_upper_bound/metrics/.ipynb_checkpoints/social_results-checkpoint.csv	cache/temp/corrupt artifact removed
+751	outputs/cifar100_4agent_25cls_upper_bound/centralized_full/.ipynb_checkpoints/centralized_results-checkpoint.csv	cache/temp/corrupt artifact removed
+5277	outputs/cifar100_4agent_25cls_conv_family_ipc10/metrics/.ipynb_checkpoints/social_results-checkpoint.csv	cache/temp/corrupt artifact removed
+19809	outputs/experiment_registry/.ipynb_checkpoints/social_results_all-checkpoint.csv	cache/temp/corrupt artifact removed
+4263	outputs/experiment_registry/.ipynb_checkpoints/conv_family_ipc10_ipc50_paper_table-checkpoint.csv	cache/temp/corrupt artifact removed
+960	outputs/cifar100_4agent_25cls_ipc50_allconvnet/metrics/.ipynb_checkpoints/social_results-checkpoint.csv	cache/temp/corrupt artifact removed
+975	outputs/cifar100_4agent_25cls_ipc50_allconvnet-conv70/metrics/.ipynb_checkpoints/social_results-checkpoint.csv	cache/temp/corrupt artifact removed
+1877	outputs/cifar100_4agent_25cls_conv_family_ipc50/metrics/.ipynb_checkpoints/social_results-checkpoint.csv	cache/temp/corrupt artifact removed
+11948032	outputs/cifar100_4agent_25cls_hetero4arch_ipc50/agents/agent_0/packets/dsdm_packet.pt.corrupt_20260706_140154	cache/temp/corrupt artifact removed

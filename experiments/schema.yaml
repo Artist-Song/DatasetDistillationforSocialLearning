@@ -1,0 +1,54 @@
+version: 1
+description: Canonical experiment registry schema for documentation and paper tables.
+
+required_fields:
+  - id
+  - title
+  - role
+  - status
+  - paper_eligible
+  - source
+
+enums:
+  role:
+    - main
+    - baseline
+    - oracle
+    - ablation
+    - diagnostic
+    - historical_evidence
+    - tuning
+    - invalid
+  status:
+    - planned
+    - running
+    - interim
+    - complete
+    - superseded
+    - failed
+  source_type:
+    - pipeline
+    - average_row
+    - evidence
+
+source_types:
+  pipeline:
+    required: [path_template, expected_seeds, method, receiver_key, metrics]
+    description: One pipeline CSV per seed; aggregate four receivers within each seed first.
+  average_row:
+    required: [path, average_key, average_value, metrics]
+    description: A baseline CSV containing an explicit average row.
+  evidence:
+    required: [paths]
+    description: Important intermediate evidence not automatically placed in the main numeric table.
+
+metric_keys:
+  - global
+  - new
+  - expert
+  - forgetting
+
+selection_policy:
+  primary: global
+  near_tie_threshold: 0.5
+  near_tie_preferences: [new, forgetting]
