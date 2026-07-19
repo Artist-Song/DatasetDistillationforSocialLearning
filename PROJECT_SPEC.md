@@ -1,6 +1,6 @@
 # PROJECT_SPEC.md
 
-最后更新：`2026-07-17`
+最后更新：`2026-07-19`
 
 本文件是项目研究定位、当前实验协议、最优超参数和结果解释的唯一事实来源。
 运行级结果明细见 `RESULTS.md`，历史过程见 `EXPERIMENT_LOG.md`。
@@ -178,15 +178,16 @@ Netwider 且约有 452 MB 参数交互；DeSA-CIL 使用 owner-aware 类增量�
 Ours 相对 Heuristic：global `+10.43`、new `+10.97`、expert `+8.83`、forgetting
 降低 `8.82`。该差值支持完整方法，但不能全部归因于 synthetic images，需结合 w/o logits。
 
-### IPC=50（Ours interim）
+### IPC=50（complete, Ours 2 seeds）
 
 | Method | Seeds | Global | New | Expert | Forgetting |
 |---|---:|---:|---:|---:|---:|
 | Heuristic hard | 3 | 32.58 ± 0.50 | 29.24 ± 0.80 | 42.57 ± 0.87 | 24.47 ± 0.68 |
 | FAST | 3 | 31.06 ± 0.36 | 27.18 ± 0.46 | 42.70 ± 0.58 | 24.34 ± 0.42 |
-| Ours DSDM + Logits | 2/3 | 35.60 ± 0.56 | 33.48 ± 0.56 | 41.96 ± 0.59 | 25.14 ± 0.87 |
+| Ours DSDM + Logits | 2 | 35.60 ± 0.56 | 33.48 ± 0.56 | 41.96 ± 0.59 | 25.14 ± 0.87 |
 
-Ours IPC=50 在 seed1 完成前只能标记 interim，不能与三 seed baseline 写最终配对差值。
+Ours IPC=50 固定使用 seed0 和 seed2 作为最终两种子结果；seed1 经用户决定停止。
+Heuristic 和 FAST 保持各自原有的三种子聚合，不因 Ours 的 seed1 缺失而改写。
 
 ### 最新外部 baseline（single seed）
 
@@ -214,12 +215,59 @@ one-ResNet Full Real 三 seed为 `51.16 / 50.40 / 53.44 / 13.60`。两者协议�
 
 大量 guardian/receiver sweep 只保留按同协议选出的最优配置及汇总，其余进入删除候选清单。
 
-## Tiny-ImageNet 计划（未实施）
+## Tiny-ImageNet 扩展（50 类诊断完成，all-200 运行中）
 
-Tiny-ImageNet 是下一数据集扩展，不属于当前完成结果。计划使用 200 类、4 agents × 50
-class-disjoint expertise、全局 0-199 标签。Task backbone 首选标准 64x64 模型组合；必须先跑
-centralized upper bound。Tiny 实验需要同时比较 self-guided 与 ConvNet local encoder，最终
-以 packet quality、new-class absorption 和 expert stability 决定主消融结论。
+Tiny-ImageNet 是下一数据集扩展，不属于当前完成的正式结果。目标协议为 200 类、4 agents ×
+50 个 class-disjoint expertise、全局 `0-199` 标签和所有分类头 200 维输出。
+
+centralized-200 backbone 第一层 seed0 已完成，clean validation top-1 为：标准 ResNet-18
+`66.43`、AlexNet-Tiny `59.96`、标准 MobileNetV2 `48.64`、ConvNet-4-IN-w1.5 `46.83`。
+clean validation 排除完整性报告发现的 7 个 train/val 完全重复且标签冲突的验证样本；训练集
+保持原始 100,000 张不变。该结果支持先用标准 ResNet-18 验证 DSDM，暂不增加 ResNet-34/50。
+
+第二层 sender 0（全局类 `0-49`）packet-quality 诊断已完成，不运行 logits、receiver 或
+social learning：
+
+```text
+Guide: standard ResNet-18-Tiny, 11,271,432 parameters, output 200
+Guide pool: sender-local 10 models x 100 epochs; two methods share byte-identical guides
+Distillation: IPC=10, factor=2, 10,000 iterations, f_idx/idx_from=5
+Evaluation checkpoints: 100/500/1000/2000/3000/5000/7500/10000
+Synthetic evaluator: 300 epochs, repeat=1
+Pair: pure DSDM vs DSDM + PCBN(all 20 BN layers, normalized, weight=10,000)
+```
+
+PCBN 权重 `10,000` 是初始量级校准值：在混合初始化 smoke 中，加权 PCBN loss 约占总 loss
+的 9%，不是已完成超参搜索后的“最优值”。两组只比较 PCBN 开关/权重，其余配置、seed、
+初始化逻辑和 guide pool 相同。
+
+50 类单 seed clean expert-class synthetic self-evaluation 结果为：
+
+| Iteration | Pure DSDM | DSDM + PCBN |
+|---:|---:|---:|
+| 100 | 31.3 | 30.3 |
+| 500 | 31.5 | 31.5 |
+| 1,000 | 32.5 | 32.2 |
+| 2,000 | **32.5460** | 32.9 |
+| 3,000 | 32.4 | 32.3 |
+| 5,000 | 32.1 | **33.5869** |
+| 7,500 | 31.9 | 30.5 |
+| 10,000 | 31.8 | 32.6 |
+
+PCBN 最佳值相对 pure DSDM 提高 `1.0408` 个百分点，但该结果仍是单 sender、单 seed 的
+packet-quality diagnostic，不能写成完整 social-learning 提升。pure DSDM 最优快照来自
+iteration 2,000，PCBN 最优快照来自 iteration 5,000；二者均没有被较低的最终评估覆盖。
+
+50 类配对完成后 all-200 scaling diagnostic 已开始，继续使用 IPC=10，因此 raw synthetic
+budget 从 `50 × 10 = 500` 增加到 `200 × 10 = 2,000`，factor=2 后为 8,000 张训练视图。
+all-200 会重新训练 10 个只使用完整 200 类训练集的 ResNet-18 guides，不能复用只见过
+`0-49` 类的当前 guide pool；纯 DSDM 与 PCBN 仍共享 byte-identical guides。PCBN 首轮固定
+同一权重 10,000 用于规模扩展对照，该设置仍不代表最优超参。
+
+每次验证分数刷新最优值时，同时原子更新 `synthetic/data_best.pt`，并在
+`synthetic/history/best_iter_XXXXX.pt` 保留不可被后续验证覆盖的迭代快照；manifest 记录
+best accuracy、iteration 和 PCBN provenance。后续仍需比较 self-guided 与 ConvNet local
+encoder，并以 packet quality、new-class absorption 和 expert stability 决定主消融结论。
 
 ## 结果选择与追溯
 

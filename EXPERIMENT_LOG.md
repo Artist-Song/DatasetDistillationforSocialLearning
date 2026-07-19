@@ -43,7 +43,7 @@
 - 主设定固定为 ConvNet-3、ConvNet-4、AlexNet 和恰好一个 compact ResNet。
 - 主方法固定为 sender task-backbone-guided DSDM + expert-class logits。
 - IPC=10 三 seed 完成：Ours global 32.78、new 29.11、expert 43.81、forgetting 23.24。
-- IPC=50 在本文档整理时完成 seed0/2，seed1 仍在队列，结果只能标记 interim。
+- IPC=50 最终采用 seed0/2 两种子 paired 结果；seed1 后续经用户决定停止并排除。
 
 ## 2026-07-16 | fast-hard-label | baseline
 
@@ -63,3 +63,10 @@
 - 建立人工 registry，将主结果、baseline、ablation、diagnostic、historical evidence 分离。
 - 旧指示和历史 spec 已先做 SHA-256 一致的归档副本。
 - 删除 checkpoint/packet 前仅生成候选清单，等待用户确认。
+
+## 2026-07-17 | one-resnet-seed1-stop | decision
+
+- 用户决定停止 seed1 IPC=50 队列，并以 seed0/2 作为 IPC=50 最终两种子结果。
+- 终止整个进程组后 GPU 降为 0% 利用率；后续 receiver、MASC 和 DeSA 未启动。
+- seed1 agent0 完成、agent1 约 17% 时停止；其 partial artifact 保留但不进入结果聚合。
+- 为保持 paired comparison，IPC=50 的 Ours、Heuristic 和 FAST 均只聚合 seed0/2。

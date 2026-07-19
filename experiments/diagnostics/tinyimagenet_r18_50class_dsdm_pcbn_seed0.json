@@ -1,0 +1,63 @@
+{
+  "status": "complete",
+  "role": "diagnostic",
+  "dataset": "tinyimagenet",
+  "seed": 0,
+  "active_global_classes": [0, 49],
+  "active_class_count": 50,
+  "classifier_outputs": 200,
+  "backbone": "standard ResNet-18-Tiny",
+  "parameters": 11271432,
+  "ipc": 10,
+  "raw_synthetic_images": 500,
+  "factor": 2,
+  "decoded_training_images": 2000,
+  "niter": 10000,
+  "feature_index": 5,
+  "synthetic_evaluator_epochs": 300,
+  "synthetic_evaluator_repeat": 1,
+  "evaluation_iterations": [100, 500, 1000, 2000, 3000, 5000, 7500, 10000],
+  "guide_pool": {
+    "models": 10,
+    "epochs_per_model": 100,
+    "expert_accuracy_min": 76.06084867894316,
+    "expert_accuracy_mean": 76.85348278622898,
+    "expert_accuracy_max": 77.7822257806245,
+    "expert_accuracy_population_std": 0.44821569262701105,
+    "selected_guide_index": 4,
+    "shared_byte_identically": true
+  },
+  "pure_dsdm": {
+    "pcbn_enabled": false,
+    "validation_top1_rounded": [31.3, 31.5, 32.5, 32.5, 32.4, 32.1, 31.9, 31.8],
+    "best_top1": 32.546036829463574,
+    "best_iteration": 2000,
+    "runtime": "10:24:41",
+    "packet_shape": [500, 3, 64, 64],
+    "packet_classes": 50,
+    "packet_finite": true
+  },
+  "dsdm_pcbn": {
+    "pcbn_enabled": true,
+    "pcbn_weight": 10000.0,
+    "pcbn_layers": "all 20 BatchNorm layers",
+    "pcbn_normalize_layers": true,
+    "validation_top1_rounded": [30.3, 31.5, 32.2, 32.9, 32.3, 33.6, 30.5, 32.6],
+    "best_top1": 33.586869495596474,
+    "best_iteration": 5000,
+    "runtime": "14:59:42",
+    "packet_shape": [500, 3, 64, 64],
+    "packet_classes": 50,
+    "packet_finite": true
+  },
+  "best_delta_pcbn_minus_pure": 1.0408326661329,
+  "configs": {
+    "pure": "configs/tinyimagenet_r18_agent0_dsdm_ipc10_seed0.yaml",
+    "pcbn": "configs/tinyimagenet_r18_agent0_dsdm_pcbn_ipc10_seed0.yaml"
+  },
+  "local_artifacts": {
+    "pure_manifest": "outputs/tinyimagenet_r18_agent0_dsdm_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json",
+    "pcbn_manifest": "outputs/tinyimagenet_r18_agent0_dsdm_pcbn_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json"
+  },
+  "caveat": "Single sender and single seed synthetic self-evaluation; no logits, receivers, or social-learning metrics."
+}

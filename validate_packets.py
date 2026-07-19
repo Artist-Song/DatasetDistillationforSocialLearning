@@ -68,6 +68,9 @@ def _expected_dsdm_summary(args):
 def _build_warning(args, packet_method, summary):
     """根据期望数量生成 warning 列表。"""
     warnings = []
+    active_class_ids = sorted(
+        {int(class_id) for classes in get_agent_class_split(args).values() for class_id in classes}
+    )
     if packet_method == "full_real":
         class_split = get_agent_class_split(args)
         samples_per_class = 500 if args.dataset == "cifar100" else 5000 if args.dataset == "cifar10" else None
@@ -82,7 +85,7 @@ def _build_warning(args, packet_method, summary):
         expected_total = sum(len(classes) for classes in get_agent_class_split(args).values()) * int(args.ipc)
         if int(summary.get("total_raw_images", -1)) != expected_total:
             warnings.append(f"total_raw_images={summary.get('total_raw_images')}，期望 {expected_total}")
-        for class_id in range(get_num_classes(args)):
+        for class_id in active_class_ids:
             got = int(summary.get("per_class_raw_images", {}).get(str(class_id), 0))
             if got != int(args.ipc):
                 warnings.append(f"class {class_id} raw images={got}，期望 IPC={args.ipc}")
@@ -93,7 +96,7 @@ def _build_warning(args, packet_method, summary):
     for key in ["total_raw_images", "total_train_images"]:
         if int(summary.get(key, -1)) != int(expected[key]):
             warnings.append(f"{key}={summary.get(key)}，期望 {expected[key]}")
-    for class_id in range(get_num_classes(args)):
+    for class_id in active_class_ids:
         got = int(summary.get("per_class_train_images", {}).get(str(class_id), 0))
         if got != int(expected["per_class_train_images"]):
             warnings.append(f"class {class_id} train images={got}，期望 {expected['per_class_train_images']}")

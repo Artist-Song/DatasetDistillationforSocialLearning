@@ -1,6 +1,6 @@
 # RESULTS.md
 
-Generated from `experiments/registry.yaml` on `2026-07-17`.
+Generated from `experiments/registry.yaml` on `2026-07-19`.
 Do not edit numeric tables manually.
 
 ## Canonical IPC Results
@@ -19,7 +19,7 @@ Notes:
 - Heuristic and FAST use hard labels only. FAST follows official pixels/per-class/minmax.
 - MASC-complete* and DeSA-CIL* are single-seed adapted baselines with protocol caveats.
 - Bold values are computed only within the directly comparable one-ResNet image-budget group.
-- Ours IPC=50 remains interim while any expected seed lacks four receiver rows.
+- Ours IPC=50 is the final two-seed result over seeds 0 and 2; Heuristic and FAST retain their three-seed aggregates.
 - High expert accuracy with near-zero new accuracy is not successful socialization.
 
 ## Full-data Validation
@@ -42,6 +42,9 @@ Full-data rows validate implementations and are not IPC-matched method rankings.
 | `centralized_upper_bounds` | diagnostic | complete | Separates model capacity and training recipe from packet quality.<br>`outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_conv3in_dsdm_strict.csv`<br>`outputs/cifar100_4agent_25cls_upper_bound/centralized_full/centralized_results_resnet10_bn_aug_ms.csv` |
 | `novgg_backbone_guidance` | diagnostic | complete | Retains self-guided ResNet packet provenance and penultimate-feature receiver comparisons.<br>`outputs/cifar100_4agent_25cls_novgg_r10_backbone_ipc10/metrics/novgg_r10_artifact_provenance.json`<br>`outputs/cifar100_4agent_25cls_novgg_r10_backbone_penult_ipc10/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_novgg_r18_backbone_ipc10/metrics/novgg_r18_artifact_provenance.json`<br>`outputs/cifar100_4agent_25cls_novgg_r18_backbone_penult_ipc10/metrics/social_results.csv` |
 | `resnet_recipe_diagnostics` | diagnostic | complete | Separates compact-versus-standard model recipe behavior from selection packet behavior.<br>`outputs/cifar100_resnet18_compact_recipe_diag_seed0_ipc50_fast/metrics/packet_integrity_fast.csv`<br>`outputs/cifar100_resnet18_standard_recipe_diag_seed0_ipc50_fast/metrics/packet_integrity_fast.csv` |
+| `tinyimagenet_backbone_validation` | diagnostic | complete | Seed0 clean-validation capacity gate for ConvNet-4, ResNet-18, AlexNet, and MobileNetV2.<br>`experiments/diagnostics/tinyimagenet_backbone_validation_seed0.json` |
+| `tinyimagenet_r18_50class_dsdm_pcbn` | diagnostic | complete | IPC10 sender0 packet-quality comparison with byte-identical guide pools; PCBN best is 1.0408 points above pure DSDM.<br>`experiments/diagnostics/tinyimagenet_r18_50class_dsdm_pcbn_seed0.json`<br>`configs/tinyimagenet_r18_agent0_dsdm_ipc10_seed0.yaml`<br>`configs/tinyimagenet_r18_agent0_dsdm_pcbn_ipc10_seed0.yaml` |
+| `tinyimagenet_r18_all200_dsdm_pcbn` | diagnostic | running | IPC10 all-200 scaling diagnostic; all-class guide pool training is active.<br>`configs/tinyimagenet_r18_all200_dsdm_ipc10_seed0.yaml`<br>`configs/tinyimagenet_r18_all200_dsdm_pcbn_ipc10_seed0.yaml` |
 
 ## Provenance
 
@@ -58,4 +61,4 @@ Full-data rows validate implementations and are not IPC-matched method rankings.
 | `one_resnet_heuristic_ipc10` | complete | 3 | - | `outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc10_heuristic_hard/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc10_heuristic_hard/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc10_heuristic_hard/metrics/social_results.csv` |  |
 | `one_resnet_heuristic_ipc50` | complete | 3 | - | `outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc50_heuristic_hard/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc50_heuristic_hard/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc50_heuristic_hard/metrics/social_results.csv` |  |
 | `one_resnet_ours_ipc10` | complete | 3 | - | `outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc10/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed1_ipc10/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc10/metrics/social_results.csv` |  |
-| `one_resnet_ours_ipc50` | interim | 2 | 1 | `outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc50/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc50/metrics/social_results.csv` | Interim until seed1 has four receiver rows. |
+| `one_resnet_ours_ipc50` | complete | 2 | - | `outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc50/metrics/social_results.csv`<br>`outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc50/metrics/social_results.csv` | Final two-seed result over seeds 0 and 2; seed1 was stopped by user decision and is excluded. |

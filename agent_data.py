@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, Subset
 from torchvision import datasets, transforms
 
 from config_adapter import apply_pcbn_overrides, build_dsdm_args_from_config
+from tiny_imagenet_data import TinyImageNetDataset, load_tiny_imagenet_leaked_validation_paths
 
 
 CIFAR10_AGENT_CLASS_SPLIT = {
@@ -269,6 +270,10 @@ def get_train_dataset(args, normalize=False, augment=False):
     transform_list = []
     if augment and args.dataset in {"cifar10", "cifar100"}:
         transform_list.extend([transforms.RandomCrop(32, padding=4), transforms.RandomHorizontalFlip()])
+    elif augment and args.dataset == "tinyimagenet":
+        transform_list.extend(
+            [transforms.RandomCrop(64, padding=4, padding_mode="reflect"), transforms.RandomHorizontalFlip()]
+        )
     transform_list.append(transforms.ToTensor())
     if normalize:
         from data import MEANS, STDS
@@ -279,6 +284,8 @@ def get_train_dataset(args, normalize=False, augment=False):
         return datasets.CIFAR10(args.data_dir, train=True, transform=transform, download=False)
     if args.dataset == "cifar100":
         return datasets.CIFAR100(args.data_dir, train=True, transform=transform, download=False)
+    if args.dataset == "tinyimagenet":
+        return TinyImageNetDataset(args.data_dir, "train", transform=transform)
     raise ValueError(f"暂不支持的数据集: {args.dataset}")
 
 
@@ -296,6 +303,17 @@ def get_test_dataset(args):
         return datasets.CIFAR10(args.data_dir, train=False, transform=transform, download=False)
     if args.dataset == "cifar100":
         return datasets.CIFAR100(args.data_dir, train=False, transform=transform, download=False)
+    if args.dataset == "tinyimagenet":
+        excluded_paths = set()
+        integrity_report = getattr(args, "tiny_integrity_report", None)
+        if integrity_report:
+            excluded_paths = load_tiny_imagenet_leaked_validation_paths(integrity_report)
+        return TinyImageNetDataset(
+            args.data_dir,
+            "val",
+            transform=transform,
+            excluded_paths=excluded_paths,
+        )
     raise ValueError(f"暂不支持的数据集: {args.dataset}")
 
 

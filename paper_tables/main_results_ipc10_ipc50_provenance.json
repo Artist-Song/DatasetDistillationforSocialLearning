@@ -57,9 +57,17 @@
     "id": "one_resnet_ours_ipc50",
     "title": "Ours",
     "role": "main",
-    "status": "interim",
+    "status": "complete",
     "paper_eligible": true,
-    "allow_partial": true,
+    "planned_seeds": [
+      0,
+      1,
+      2
+    ],
+    "reported_seeds": [
+      0,
+      2
+    ],
     "table_section": "ipc",
     "table_order": 50,
     "ipc": 50,
@@ -67,13 +75,12 @@
     "soft_labels": "Sender expert logits",
     "protocol": "one-ResNet self-guided DSDM",
     "comparability_group": "one_resnet_ipc50_image_budget",
-    "caveat": "Interim until seed1 has four receiver rows.",
+    "caveat": "Final two-seed result over seeds 0 and 2; seed1 was stopped by user decision and is excluded.",
     "source": {
       "type": "pipeline",
       "path_template": "outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50/metrics/social_results.csv",
       "expected_seeds": [
         0,
-        1,
         2
       ],
       "method": "DSDM_LOGIT",
@@ -100,11 +107,9 @@
     "expert_std": 0.5850000000000009,
     "forgetting_mean": 25.139999999999997,
     "forgetting_std": 0.870000000000001,
-    "expected_seeds": 3,
-    "missing_seeds": [
-      1
-    ],
-    "actual_status": "interim",
+    "expected_seeds": 2,
+    "missing_seeds": [],
+    "actual_status": "complete",
     "source_files": [
       "outputs/cifar100_4agent_25cls_one_resnet_seed0_ipc50/metrics/social_results.csv",
       "outputs/cifar100_4agent_25cls_one_resnet_seed2_ipc50/metrics/social_results.csv"

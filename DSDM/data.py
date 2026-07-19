@@ -18,6 +18,8 @@ MEANS['cifar10'] = MEANS['cifar']
 STDS['cifar10'] = STDS['cifar']
 MEANS['cifar100'] = MEANS['cifar']
 STDS['cifar100'] = STDS['cifar']
+MEANS['tinyimagenet'] = MEANS['imagenet']
+STDS['tinyimagenet'] = STDS['imagenet']
 MEANS['svhn'] = [0.4377, 0.4438, 0.4728]
 STDS['svhn'] = [0.1980, 0.2010, 0.1970]
 MEANS['mnist'] = [0.1307]
@@ -321,6 +323,23 @@ def transform_imagenet(size=-1,
     test_transform = transforms.Compose(resize_test + cast + normal_fn)
 
     return train_transform, test_transform
+
+
+def transform_tinyimagenet(augment=False, from_tensor=False, normalize=True):
+    """Build the 64px Tiny-ImageNet transforms used by DSDM evaluation."""
+    aug = []
+    if augment:
+        aug = [
+            transforms.RandomCrop(64, padding=4, padding_mode='reflect'),
+            transforms.RandomHorizontalFlip(),
+        ]
+    cast = [] if from_tensor else [transforms.ToTensor()]
+    normal_fn = []
+    if normalize:
+        normal_fn = [transforms.Normalize(mean=MEANS['tinyimagenet'], std=STDS['tinyimagenet'])]
+    transform = transforms.Compose(cast + aug + normal_fn)
+    test_transform = transforms.Compose(cast + normal_fn)
+    return transform, test_transform
 
 
 class _RepeatSampler(object):

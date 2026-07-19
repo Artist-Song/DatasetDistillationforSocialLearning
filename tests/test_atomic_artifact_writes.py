@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -5,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from output_manager import atomic_copyfile, atomic_torch_save
+from output_manager import atomic_copyfile, atomic_torch_save, save_best_synthetic
 
 
 class AtomicArtifactWriteTest(unittest.TestCase):
@@ -36,6 +37,43 @@ class AtomicArtifactWriteTest(unittest.TestCase):
             self.assertEqual(original.read_bytes(), b"old")
             self.assertEqual(target.read_bytes(), b"new")
             self.assertFalse(os.path.samefile(original, target))
+
+    def test_best_synthetic_keeps_immutable_iteration_history(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = type(
+                "Args",
+                (),
+                {
+                    "output_root": tmpdir,
+                    "run_name": "run",
+                    "dataset": "tinyimagenet",
+                    "ipc": 10,
+                    "pcbn_enabled": True,
+                    "pcbn_weight": 1.5,
+                },
+            )()
+            synset = type(
+                "Synset",
+                (),
+                {
+                    "data": torch.ones(2, 3, 4, 4),
+                    "targets": torch.tensor([0, 1]),
+                },
+            )()
+
+            save_best_synthetic(args, synset, best_acc=12.5, iteration=100)
+            synset.data.zero_()
+            save_best_synthetic(args, synset, best_acc=13.0, iteration=500)
+
+            history_100 = Path(tmpdir) / "run" / "synthetic" / "history" / "best_iter_00100.pt"
+            history_500 = Path(tmpdir) / "run" / "synthetic" / "history" / "best_iter_00500.pt"
+            manifest = json.loads(
+                (Path(tmpdir) / "run" / "synthetic" / "best_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(torch.equal(torch.load(history_100)["images"], torch.ones(2, 3, 4, 4)))
+            self.assertTrue(torch.equal(torch.load(history_500)["images"], torch.zeros(2, 3, 4, 4)))
+            self.assertEqual(manifest["iteration"], 500)
+            self.assertEqual(manifest["best_acc"], 13.0)
 
 
 if __name__ == "__main__":

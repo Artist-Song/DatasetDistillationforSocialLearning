@@ -27,6 +27,7 @@ class AlexNetCIFAR(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
         )
+        self.avgpool = nn.AdaptiveAvgPool2d((4, 4))
         self.classifier = nn.Sequential(
             nn.Dropout(0.2),
             nn.Linear(256 * 4 * 4, 1024),
@@ -39,6 +40,7 @@ class AlexNetCIFAR(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
+        x = self.avgpool(x)
         x = torch.flatten(x, 1)
         return self.classifier(x)
 
@@ -54,6 +56,7 @@ class AlexNetCIFAR(nn.Module):
                 if idx_to < len(features):
                     return features[idx_from:idx_to + 1], None
 
+        x = self.avgpool(x)
         x = torch.flatten(x, 1)
         features.append(x)
         if idx_to < len(features):

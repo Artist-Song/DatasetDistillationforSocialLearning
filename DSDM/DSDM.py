@@ -5,7 +5,14 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms
-from data import transform_imagenet, transform_cifar, transform_svhn, transform_mnist, transform_fashion
+from data import (
+    transform_imagenet,
+    transform_tinyimagenet,
+    transform_cifar,
+    transform_svhn,
+    transform_mnist,
+    transform_fashion,
+)
 from data import TensorDataset, save_img
 from data import ClassDataLoader, ClassMemDataLoader, MultiEpochsDataLoader
 from data import MEANS, STDS
@@ -258,6 +265,9 @@ class Synthesizer():
                                                     size=0,
                                                     rrc=args.rrc,
                                                     rrc_size=self.size[0])
+        elif args.dataset == 'tinyimagenet':
+            train_transform, _ = transform_tinyimagenet(
+                augment=augment, from_tensor=True)
         elif args.dataset[:5] == 'cifar':
             train_transform, _ = transform_cifar(
                 augment=augment, from_tensor=True)
@@ -372,6 +382,27 @@ def load_resized_data(args):
         val_dataset = datasets.FashionMNIST(
             args.data_dir, train=False, transform=transform_test)
         train_dataset.nclass = 10
+
+    elif args.dataset == 'tinyimagenet':
+        from tiny_imagenet_data import (
+            TinyImageNetDataset,
+            load_tiny_imagenet_leaked_validation_paths,
+        )
+
+        normalize = transforms.Normalize(
+            mean=MEANS['tinyimagenet'], std=STDS['tinyimagenet'])
+        excluded_paths = set()
+        integrity_report = getattr(args, 'tiny_integrity_report', None)
+        if integrity_report:
+            excluded_paths = load_tiny_imagenet_leaked_validation_paths(integrity_report)
+        train_dataset = TinyImageNetDataset(
+            args.data_dir, 'train', transform=transforms.ToTensor())
+        val_dataset = TinyImageNetDataset(
+            args.data_dir,
+            'val',
+            transform=transforms.Compose([transforms.ToTensor(), normalize]),
+            excluded_paths=excluded_paths,
+        )
 
 
     active_class_ids = getattr(args, 'active_class_ids', None)
@@ -670,9 +701,17 @@ def condense(args, logger, device='cuda'):
                             'factor': int(args.factor),
                             'decode_type': args.decode_type,
                             'packet_format': 'compact_multi_formation',
+                            'pcbn_enabled': bool(pcbn_regularizer.enabled),
+                            'pcbn_weight': float(pcbn_regularizer.weight),
                         },
                     )
-                    _try_stage1_output('save_best_visuals', args, synset.data.detach(), synset.targets.detach())
+                    _try_stage1_output(
+                        'save_best_visuals',
+                        args,
+                        synset.data.detach(),
+                        synset.targets.detach(),
+                        iteration=it + 1,
+                    )
                     print("best img and data updated!")
                     save_img(os.path.join(args.save_dir, f'img{it+1}.png'),
                              synset.data,
@@ -702,10 +741,12 @@ def run_dsdm(args):
     assert args.ipc > 0
 
     cudnn.benchmark = True
-    if args.seed > 0:
+    if args.seed >= 0:
+        random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
 
     os.makedirs(args.save_dir, exist_ok=True)
     cur_file = os.path.join(os.getcwd(), __file__)

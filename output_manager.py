@@ -56,6 +56,23 @@ def atomic_copyfile(source, target):
     return target
 
 
+def atomic_write_json(payload, path):
+    """Write JSON through a same-directory temporary file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, mode="w", encoding="utf-8", delete=False
+    ) as handle:
+        temp_path = Path(handle.name)
+        json.dump(payload, handle, indent=2, ensure_ascii=False, sort_keys=True)
+        handle.write("\n")
+    try:
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+    return path
+
+
 def get_run_dir(args):
     """根据 output_root 和 run_name 返回本次实验目录。"""
     return Path(args.output_root) / args.run_name
@@ -81,8 +98,10 @@ def prepare_output_dirs(args):
         "logs",
         "checkpoints",
         "synthetic",
+        "synthetic/history",
         "packets",
         "visuals",
+        "visuals/history",
         "visuals/per_class",
         "metrics",
         "embeddings/tsne",
@@ -132,8 +151,23 @@ def save_best_synthetic(args, synset, best_acc, iteration):
         "iteration": iteration,
         "dataset": args.dataset,
         "ipc": args.ipc,
+        "pcbn_enabled": bool(getattr(args, "pcbn_enabled", False)),
+        "pcbn_weight": float(getattr(args, "pcbn_weight", 0.0)),
     }
     atomic_torch_save(payload, path)
+    history_path = get_run_dir(args) / "synthetic" / "history" / f"best_iter_{int(iteration):05d}.pt"
+    atomic_torch_save(payload, history_path)
+    atomic_write_json(
+        {
+            "best_acc": float(best_acc),
+            "iteration": int(iteration),
+            "latest_best": str(path),
+            "history_snapshot": str(history_path),
+            "pcbn_enabled": payload["pcbn_enabled"],
+            "pcbn_weight": payload["pcbn_weight"],
+        },
+        get_run_dir(args) / "synthetic" / "best_manifest.json",
+    )
     return path
 
 
@@ -181,6 +215,8 @@ def _save_grid(path, images, args, unnormalize=False):
     """保存一组图片网格，可用于 packet 可视化。"""
     from data import save_img
 
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     save_img(str(path), images, unnormalize=unnormalize, dataname=args.dataset)
     return path
 
@@ -195,10 +231,16 @@ def save_aug_visual(args, images):
     return _save_grid(get_run_dir(args) / "visuals" / "aug.png", images, args, unnormalize=True)
 
 
-def save_best_visuals(args, images, labels):
+def save_best_visuals(args, images, labels, iteration=None):
     """保存最优蒸馏图整体和按类别可视化。"""
     run_dir = get_run_dir(args)
     _save_grid(run_dir / "visuals" / "best_grid.png", images, args)
+    if iteration is not None:
+        _save_grid(
+            run_dir / "visuals" / "history" / f"best_iter_{int(iteration):05d}.png",
+            images,
+            args,
+        )
     for class_id in sorted({int(x) for x in labels.detach().cpu().tolist()}):
         mask = labels.detach().cpu() == class_id
         if mask.any():

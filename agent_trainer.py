@@ -1,12 +1,16 @@
 import json
+import random
+import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 
 from agent_data import get_agent_class_split, get_agent_dir, get_agent_train_dataset, get_num_classes, get_test_dataset
+from output_manager import atomic_torch_save
 
 
 def _ensure_dsdm_path():
@@ -110,6 +114,11 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
     if resume and not overwrite and _all_guides_exist(args, ckpt_dir):
         return _select_best_expert(args, agent_id, ckpt_dir, device)
 
+    base_seed = int(args.seed) + 100_000 * int(agent_id)
+    random.seed(base_seed)
+    np.random.seed(base_seed)
+    torch.manual_seed(base_seed)
+    torch.cuda.manual_seed_all(base_seed)
     expert_batch_size = int(getattr(args, "expert_batch_size", args.batch_size))
     dataset = get_agent_train_dataset(
         args,
@@ -117,10 +126,23 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
         normalize=True,
         augment=bool(getattr(args, "expert_augment", False)),
     )
-    loader = DataLoader(dataset, batch_size=expert_batch_size, shuffle=True, num_workers=args.workers)
+    loader_generator = torch.Generator().manual_seed(base_seed)
+    loader = DataLoader(
+        dataset,
+        batch_size=expert_batch_size,
+        shuffle=True,
+        num_workers=args.workers,
+        generator=loader_generator,
+        persistent_workers=int(args.workers) > 0,
+    )
     if int(args.pretrained_model_number) <= 0:
         raise RuntimeError("pretrained_model_number 必须大于 0")
     for model_idx in range(int(args.pretrained_model_number)):
+        model_seed = base_seed + model_idx
+        random.seed(model_seed)
+        np.random.seed(model_seed)
+        torch.manual_seed(model_seed)
+        torch.cuda.manual_seed_all(model_seed)
         model = define_model(args, get_num_classes(args)).to(device)
         expert_lr = float(getattr(args, "expert_lr", args.lr))
         optimizer = optim.SGD(model.parameters(), lr=expert_lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -143,7 +165,14 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
             raise ValueError(f"不支持的 expert scheduler: {scheduler_name}")
         criterion = nn.CrossEntropyLoss()
         model.train()
-        for _ in range(int(args.pretrained_epochs)):
+        guide_start = time.monotonic()
+        print(
+            f"[train_experts] agent={agent_id} guide={model_idx} "
+            f"epochs={int(args.pretrained_epochs)} seed={model_seed}",
+            flush=True,
+        )
+        report_every = max(1, int(args.pretrained_epochs) // 10)
+        for epoch in range(int(args.pretrained_epochs)):
             for images, labels in loader:
                 images = images.to(device)
                 labels = labels.to(device)
@@ -153,8 +182,16 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
                 optimizer.step()
             if scheduler is not None:
                 scheduler.step()
+            if (epoch + 1) % report_every == 0 or epoch + 1 == int(args.pretrained_epochs):
+                print(
+                    f"[train_experts] agent={agent_id} guide={model_idx} "
+                    f"epoch={epoch + 1}/{int(args.pretrained_epochs)} "
+                    f"loss={float(loss.detach().item()):.4f} "
+                    f"elapsed={time.monotonic() - guide_start:.1f}s",
+                    flush=True,
+                )
         guide_path = ckpt_dir / f"guide_model_{model_idx}.pt"
-        torch.save(model.state_dict(), guide_path)
+        atomic_torch_save(model.state_dict(), guide_path)
         del model
     return _select_best_expert(args, agent_id, ckpt_dir, device)
 
@@ -171,7 +208,7 @@ def prepare_agent_pretrained_dir(args, agent_id):
     for model_idx, src in enumerate(_guide_paths(args, ckpt_dir)):
         dst = dsdm_dir / f"{args.dataset}_model_{model_idx}.pth"
         if not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime:
-            torch.save(torch.load(src, map_location="cpu"), dst)
+            atomic_torch_save(torch.load(src, map_location="cpu"), dst)
         manifest.append({"model_idx": model_idx, "src": str(src), "dst": str(dst)})
     with open(dsdm_dir / "pretrained_manifest.json", "w", encoding="utf-8") as f:
         json.dump({"agent_id": int(agent_id), "models": manifest}, f, indent=2, ensure_ascii=False)

@@ -252,7 +252,7 @@ def build_results_markdown(registry: dict, rows: list[dict]) -> str:
         "- Heuristic and FAST use hard labels only. FAST follows official pixels/per-class/minmax.",
         "- MASC-complete* and DeSA-CIL* are single-seed adapted baselines with protocol caveats.",
         "- Bold values are computed only within the directly comparable one-ResNet image-budget group.",
-        "- Ours IPC=50 remains interim while any expected seed lacks four receiver rows.",
+        "- Ours IPC=50 is the final two-seed result over seeds 0 and 2; Heuristic and FAST retain their three-seed aggregates.",
         "- High expert accuracy with near-zero new accuracy is not successful socialization.",
         "",
         "## Full-data Validation",

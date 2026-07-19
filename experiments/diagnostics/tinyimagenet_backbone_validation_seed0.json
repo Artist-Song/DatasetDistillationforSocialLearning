@@ -1,0 +1,43 @@
+{
+  "status": "complete",
+  "role": "diagnostic",
+  "dataset": "tinyimagenet",
+  "seed": 0,
+  "num_classes": 200,
+  "image_size": 64,
+  "train_images": 100000,
+  "validation_images_raw": 10000,
+  "validation_images_clean": 9993,
+  "excluded_conflicting_train_val_duplicates": 7,
+  "global_label_mapping": "wnids.txt order, 0-199",
+  "epochs": 200,
+  "results": [
+    {
+      "model": "resnet18",
+      "parameters": 11271432,
+      "best_raw_val_top1": 66.43,
+      "final_clean_val_top1": 66.42649854898428
+    },
+    {
+      "model": "alexnet",
+      "parameters": 7076616,
+      "best_raw_val_top1": 60.15,
+      "final_clean_val_top1": 59.96197338136696
+    },
+    {
+      "model": "mobilenetv2",
+      "parameters": 2480072,
+      "best_raw_val_top1": 48.86,
+      "final_clean_val_top1": 48.644050835584906
+    },
+    {
+      "model": "convnet4",
+      "parameters": 1617416,
+      "best_raw_val_top1": 46.83,
+      "final_clean_val_top1": 46.832782948063645
+    }
+  ],
+  "data_integrity_report": "outputs/tinyimagenet_data_validation_20260718/data_integrity.json",
+  "runner": "scripts/run_tiny_backbone_validation.py",
+  "caveat": "Single-seed centralized capacity diagnostic; not a dataset-distillation result."
+}

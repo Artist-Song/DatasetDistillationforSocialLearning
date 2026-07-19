@@ -1,5 +1,5 @@
 version: 1
-updated_at: '2026-07-17'
+updated_at: '2026-07-19'
 selection_policy:
   primary: global
   near_tie_threshold: 0.5
@@ -36,9 +36,10 @@ experiments:
   - id: one_resnet_ours_ipc50
     title: Ours
     role: main
-    status: interim
+    status: complete
     paper_eligible: true
-    allow_partial: true
+    planned_seeds: [0, 1, 2]
+    reported_seeds: [0, 2]
     table_section: ipc
     table_order: 50
     ipc: 50
@@ -46,11 +47,11 @@ experiments:
     soft_labels: Sender expert logits
     protocol: one-ResNet self-guided DSDM
     comparability_group: one_resnet_ipc50_image_budget
-    caveat: Interim until seed1 has four receiver rows.
+    caveat: Final two-seed result over seeds 0 and 2; seed1 was stopped by user decision and is excluded.
     source:
       type: pipeline
       path_template: outputs/cifar100_4agent_25cls_one_resnet_seed{seed}_ipc50/metrics/social_results.csv
-      expected_seeds: [0, 1, 2]
+      expected_seeds: [0, 2]
       method: DSDM_LOGIT
       receiver_key: receiver_agent
       expected_receivers: [0, 1, 2, 3]
@@ -355,6 +356,42 @@ experiments:
       paths:
         - outputs/cifar100_resnet18_compact_recipe_diag_seed0_ipc50_fast/metrics/packet_integrity_fast.csv
         - outputs/cifar100_resnet18_standard_recipe_diag_seed0_ipc50_fast/metrics/packet_integrity_fast.csv
+
+  - id: tinyimagenet_backbone_validation
+    title: Tiny-ImageNet centralized backbone validation
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    description: Seed0 clean-validation capacity gate for ConvNet-4, ResNet-18, AlexNet, and MobileNetV2.
+    source:
+      type: evidence
+      paths:
+        - experiments/diagnostics/tinyimagenet_backbone_validation_seed0.json
+
+  - id: tinyimagenet_r18_50class_dsdm_pcbn
+    title: Tiny-ImageNet ResNet-18 DSDM/PCBN 50-class diagnostic
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    description: IPC10 sender0 packet-quality comparison with byte-identical guide pools; PCBN best is 1.0408 points above pure DSDM.
+    source:
+      type: evidence
+      paths:
+        - experiments/diagnostics/tinyimagenet_r18_50class_dsdm_pcbn_seed0.json
+        - configs/tinyimagenet_r18_agent0_dsdm_ipc10_seed0.yaml
+        - configs/tinyimagenet_r18_agent0_dsdm_pcbn_ipc10_seed0.yaml
+
+  - id: tinyimagenet_r18_all200_dsdm_pcbn
+    title: Tiny-ImageNet ResNet-18 DSDM/PCBN all-200 diagnostic
+    role: diagnostic
+    status: running
+    paper_eligible: false
+    description: IPC10 all-200 scaling diagnostic; all-class guide pool training is active.
+    source:
+      type: evidence
+      paths:
+        - configs/tinyimagenet_r18_all200_dsdm_ipc10_seed0.yaml
+        - configs/tinyimagenet_r18_all200_dsdm_pcbn_ipc10_seed0.yaml
 
 superseded_sources:
   - id: masc_official_flow_old

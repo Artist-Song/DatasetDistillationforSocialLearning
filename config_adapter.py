@@ -13,6 +13,7 @@ DSDM_DEFAULT_ARGS = {
     "dataset": "cifar10",
     "data_dir": "./data",
     "imagenet_dir": "/ssd_data/imagenet/",
+    "tiny_integrity_report": None,
     "nclass": 10,
     "num_classes": 10,
     "active_class_ids": None,
@@ -229,6 +230,11 @@ def _apply_dataset_rules(args):
         args.nch = 1
         args.mix_p = 0.5
         args.dsa = True
+    elif args.dataset == "tinyimagenet":
+        args.size = 64
+        args.nclass = int(args.num_classes)
+        args.mix_p = 0.5
+        args.dsa = True
     elif args.dataset == "speech":
         args.nch = 1
         args.size = 64
@@ -315,6 +321,7 @@ def _apply_config_overrides(args, cfg):
     args.run_name = project.get("run_name", args.run_name)
     args.dataset = dataset.get("name", args.dataset)
     args.data_dir = dataset.get("data_dir", args.data_dir)
+    args.tiny_integrity_report = dataset.get("integrity_report", args.tiny_integrity_report)
     args.nclass = dataset.get("num_classes", args.nclass)
     args.num_classes = dataset.get("num_classes", args.nclass)
     args.size = dataset.get("image_size", args.size)
@@ -356,6 +363,7 @@ def _apply_config_overrides(args, cfg):
         "cov_weight",
         "h_p_weight",
         "smooth_factor",
+        "load_memory",
     ]:
         if key in distill:
             setattr(args, key, distill[key])

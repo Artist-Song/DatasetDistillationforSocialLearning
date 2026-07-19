@@ -286,7 +286,7 @@ def test_data(args,
     """Train neural networks on condensed data
     """
 
-    args.epoch_print_freq = args.epochs // num_val
+    args.epoch_print_freq = max(1, args.epochs // num_val)
 
     if model_fn is None:
         model_fn_ls = [define_model]
