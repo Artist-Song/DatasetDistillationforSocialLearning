@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from output_manager import atomic_copyfile, atomic_torch_save, save_best_synthetic
+from output_manager import atomic_copyfile, atomic_torch_save, finalize_dsdm_packet, save_best_synthetic
 
 
 class AtomicArtifactWriteTest(unittest.TestCase):
@@ -74,6 +74,31 @@ class AtomicArtifactWriteTest(unittest.TestCase):
             self.assertTrue(torch.equal(torch.load(history_500)["images"], torch.zeros(2, 3, 4, 4)))
             self.assertEqual(manifest["iteration"], 500)
             self.assertEqual(manifest["best_acc"], 13.0)
+
+    def test_finalize_dsdm_packet_records_completion_and_numerics(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            packet_path = Path(tmpdir) / "packet.pt"
+            torch.save(
+                {
+                    "images": torch.ones(2, 3, 4, 4),
+                    "labels": torch.tensor([0, 1]),
+                    "meta": {"best_acc": 64.9},
+                },
+                packet_path,
+            )
+            finalize_dsdm_packet(
+                packet_path,
+                {
+                    "completed_iterations": 10000,
+                    "grad_clip_norm": 100.0,
+                    "grad_clip_count": 1,
+                    "max_grad_norm": 1234.0,
+                },
+            )
+            packet = torch.load(packet_path, map_location="cpu")
+            self.assertTrue(packet["meta"]["condense_complete"])
+            self.assertEqual(packet["meta"]["completed_iterations"], 10000)
+            self.assertEqual(packet["meta"]["grad_clip_count"], 1)
 
 
 if __name__ == "__main__":

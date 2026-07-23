@@ -14,7 +14,7 @@ from agent_data import (
 )
 from agent_trainer import prepare_agent_pretrained_dir, train_agent_experts
 from config_adapter import args_to_pretty_json, build_dsdm_args_from_config, load_config
-from output_manager import save_packet
+from output_manager import finalize_dsdm_packet, save_packet
 from packet_logits import attach_sender_logits_to_packet
 from packet_generalist import (
     attach_generalist_logits_to_packets,
@@ -184,13 +184,24 @@ def _stage_distill_packets(cfg, config_path, base_args, cli):
     progress = ProgressTimer(len(agent_ids), name="distill_packets")
     for index, agent_id in enumerate(agent_ids, start=1):
         agent_args = build_agent_args(cfg, config_path, agent_id)
+        agent_dir = get_agent_dir(agent_args, agent_id)
         agent_args.save_pretrain_dir = str(prepare_agent_pretrained_dir(agent_args, agent_id))
-        agent_args.save_dir = str(get_agent_dir(agent_args, agent_id) / "checkpoints")
-        agent_args.output_root = str(get_agent_dir(agent_args, agent_id))
+        agent_args.save_dir = str(agent_dir / "checkpoints")
+        agent_args.output_root = str(agent_dir)
         agent_args.run_name = ""
         os.environ["CUDA_VISIBLE_DEVICES"] = str(agent_args.gpu_id)
         print(f"[distill_packets] agent={agent_id} model={agent_args.net_type} classes={agent_args.active_class_ids}")
-        run_dsdm(agent_args)
+        numerical_summary = run_dsdm(agent_args)
+        packet_path = agent_dir / "packets" / "dsdm_packet.pt"
+        if not packet_path.exists():
+            raise FileNotFoundError(f"DSDM 完成后缺少 packet: {packet_path}")
+        import torch
+
+        packet = torch.load(packet_path, map_location="cpu")
+        images = packet.get("images")
+        if not torch.is_tensor(images) or not bool(torch.isfinite(images).all().item()):
+            raise FloatingPointError(f"DSDM packet images 非有限: {packet_path}")
+        finalize_dsdm_packet(packet_path, numerical_summary)
         progress.update(index, extra=f"agent={agent_id}")
     _stage_done("distill_packets")
 

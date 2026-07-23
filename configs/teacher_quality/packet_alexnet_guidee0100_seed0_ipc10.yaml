@@ -1,0 +1,279 @@
+project:
+  name: social_packet_learning
+  stage: teacher_quality_packet
+  output_root: ./outputs
+  run_name: cifar100_tq_alexnet_guidee0100_seed0_ipc10
+  comparability_group: cifar100_teacher_quality_seed0
+dataset:
+  name: cifar100
+  data_dir: ./data
+  num_classes: 100
+  image_size: 32
+  partition: pat_class_disjoint
+  source_split: original_cifar100_train_test
+  class_assignment: numpy_randomstate_permutation
+  class_assignment_seed: 0
+model_pool:
+  default: convnet3w1
+  models:
+    convnet3w1:
+      family: convnet
+      depth: 3
+      width: 1.0
+      norm_type: instance
+      distillation:
+        f_idx: '2'
+        lr_img: 0.1
+        niter: 10000
+    convnet4w15:
+      family: convnet
+      depth: 4
+      width: 1.5
+      norm_type: instance
+      distillation:
+        f_idx: '3'
+        lr_img: 0.1
+        niter: 10000
+    alexnet:
+      family: alexnet
+      norm_type: batch
+      distillation:
+        f_idx: '7'
+        lr_img: 0.005
+        niter: 10000
+      guide_training:
+        num_models: 10
+        max_epochs: 200
+        snapshot_epochs:
+        - 20
+        - 50
+        - 100
+        - 200
+        selected_epoch: 100
+        lr: 0.01
+        batch_size: 128
+        augment: false
+        scheduler: multistep
+        scheduler_milestones:
+        - 100
+        - 150
+        scheduler_gamma: 0.2
+        source_root: outputs/cifar100_teacher_quality_alexnet_seed0
+      expert_training:
+        separate: true
+        epochs: 500
+        lr: 0.01
+        batch_size: 128
+        augment: true
+        use_dsdm_train: false
+        scheduler: multistep
+        scheduler_milestones:
+        - 333
+        - 416
+        scheduler_gamma: 0.2
+        validation_fraction: 0.1
+        eval_interval: 5
+        retrain_full: true
+        source_root: outputs/cifar100_teacher_quality_alexnet_seed0
+    resnet10:
+      family: resnet
+      depth: 10
+      norm_type: batch
+      distillation:
+        f_idx: '5'
+        lr_img: 0.01
+        niter: 10000
+    resnet18:
+      family: resnet
+      depth: 18
+      norm_type: batch
+      distillation:
+        f_idx: '5'
+        lr_img: 0.01
+        niter: 10000
+distillation:
+  method: dsdm
+  ipc: 10
+  factor: 2
+  init: mix
+  decode_type: single
+  aug_type: color_crop_cutout
+  match: semantic
+  metric: mse
+  f_idx: '2'
+  niter: 10000
+  evaluate_iterations:
+  - 100
+  - 500
+  - 1000
+  - 2000
+  - 3000
+  - 5000
+  - 7500
+  - 10000
+  lr_img: 0.1
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  smooth_iter: 2000
+  cov_weight: 50.0
+  h_p_weight: 0.2
+  smooth_factor: 0.99
+  pretrained_model_number: 10
+  pretrained_epochs: 20
+selection:
+  enabled: true
+  methods:
+  - heuristic
+  - full_real
+  heuristic:
+    strategy: random_per_class
+packet:
+  enabled: true
+  format: hard_label_images
+communication:
+  enabled: true
+  protocol: none
+  mode: direct
+  use_sender_logits: true
+  use_generalist_logits: false
+agents:
+  num_agents: 5
+  num_classes: 100
+  class_split:
+    agent_0:
+    - 26
+    - 86
+    - 2
+    - 55
+    - 75
+    - 93
+    - 16
+    - 73
+    - 54
+    - 95
+    - 53
+    - 92
+    - 78
+    - 13
+    - 7
+    - 30
+    - 22
+    - 24
+    - 33
+    - 8
+    agent_1:
+    - 43
+    - 62
+    - 3
+    - 71
+    - 45
+    - 48
+    - 6
+    - 99
+    - 82
+    - 76
+    - 60
+    - 80
+    - 90
+    - 68
+    - 51
+    - 27
+    - 18
+    - 56
+    - 63
+    - 74
+    agent_2:
+    - 1
+    - 61
+    - 42
+    - 41
+    - 4
+    - 15
+    - 17
+    - 40
+    - 38
+    - 5
+    - 91
+    - 59
+    - 0
+    - 34
+    - 28
+    - 50
+    - 11
+    - 35
+    - 23
+    - 52
+    agent_3:
+    - 10
+    - 31
+    - 66
+    - 57
+    - 79
+    - 85
+    - 32
+    - 84
+    - 14
+    - 89
+    - 19
+    - 29
+    - 49
+    - 97
+    - 98
+    - 69
+    - 20
+    - 94
+    - 72
+    - 77
+    agent_4:
+    - 25
+    - 37
+    - 81
+    - 46
+    - 39
+    - 65
+    - 58
+    - 12
+    - 88
+    - 70
+    - 87
+    - 36
+    - 21
+    - 83
+    - 9
+    - 96
+    - 67
+    - 64
+    - 47
+    - 44
+  model_split:
+    agent_0: convnet3w1
+    agent_1: convnet4w15
+    agent_2: alexnet
+    agent_3: resnet10
+    agent_4: resnet18
+social_learning:
+  receiver:
+    epochs: 60
+    lr: 0.01
+    lambda_fr: 0.2
+    self_real_per_class: 20
+    scheduler: multistep
+    scheduler_gamma: 0.2
+    scheduler_milestones:
+    - 39
+    - 51
+logits:
+  enabled: true
+  lambda_kd: 0.6
+  temperature: 2.0
+evaluation:
+  enabled: true
+  epochs: 1500
+  batch_size: 64
+  repeat: 1
+runtime:
+  seed: 0
+  workers: 4
+  device: cuda
+  gpu_id: 0

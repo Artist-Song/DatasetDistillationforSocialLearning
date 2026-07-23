@@ -184,6 +184,10 @@ def _validate_packet_payload(payload):
     overlap = banned.intersection(payload.keys())
     if overlap:
         raise ValueError(f"packet 包含禁止字段: {sorted(overlap)}")
+    for name in ("images", "sender_logits", "generalist_logits"):
+        tensor = payload.get(name)
+        if torch.is_tensor(tensor) and tensor.is_floating_point() and not bool(torch.isfinite(tensor).all().item()):
+            raise ValueError(f"packet 包含非有限 {name}")
 
 
 def save_packet(args, images, labels, class_ids, source, method, meta=None):
@@ -209,6 +213,27 @@ def save_packet(args, images, labels, class_ids, source, method, meta=None):
     path = get_packet_path(args, source)
     atomic_torch_save(payload, path)
     return path
+
+
+def finalize_dsdm_packet(packet_path, numerical_summary):
+    """Mark a finite DSDM packet complete only after all condensation iterations return."""
+    packet_path = Path(packet_path)
+    payload = torch.load(packet_path, map_location="cpu")
+    _validate_packet_payload(payload)
+    meta = dict(payload.get("meta", {}))
+    meta.update(
+        {
+            "condense_complete": True,
+            "completed_iterations": int(numerical_summary["completed_iterations"]),
+            "grad_clip_norm": float(numerical_summary["grad_clip_norm"]),
+            "grad_clip_count": int(numerical_summary["grad_clip_count"]),
+            "max_grad_norm": float(numerical_summary["max_grad_norm"]),
+        }
+    )
+    payload["meta"] = meta
+    _validate_packet_payload(payload)
+    atomic_torch_save(payload, packet_path)
+    return packet_path
 
 
 def _save_grid(path, images, args, unnormalize=False):

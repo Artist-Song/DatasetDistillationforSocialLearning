@@ -215,6 +215,90 @@ one-ResNet Full Real 三 seed为 `51.16 / 50.40 / 53.44 / 13.60`。两者协议�
 
 大量 guardian/receiver sweep 只保留按同协议选出的最优配置及汇总，其余进入删除候选清单。
 
+## PAT-style 类别划分扩展（seed0 验证运行中）
+
+该扩展只借用 PAT 的 class-disjoint 类别分配思想，不复用 FedRE 的模型、优化器、服务器或
+训练/测试重划分。CIFAR-100 官方 50,000 张训练集和 10,000 张测试集保持不变；seed0 用
+`numpy.random.RandomState(0).permutation(100)` 固定类别顺序，再比较：
+
+```text
+PAT5 : 5 agents x 20 classes，五种 backbone 各出现一次
+PAT10: 10 agents x 10 classes，五种 backbone 各出现两次
+Models: ConvNet-3 / ConvNet-4 / AlexNet / compact ResNet-10 / compact ResNet-18
+```
+
+PAT5 的每个 20 类集合等于 PAT10 中相邻两个 10 类集合的并集。除 agent 数量与类别集合外，
+两组均沿用当前 IPC=10 主方法：sender task-backbone-guided DSDM、sender expert-class logits、
+receiver recipe 和 global/new/expert/forgetting 指标。每个 receiver 的 global 在原始 CIFAR-100
+全类测试集上计算；PAT5 的 expert/new 测试样本数为 2,000/8,000，PAT10 为 1,000/9,000。
+两组属于不同 `comparability_group`，不能与 4-agent 主表直接计算方法差值。
+
+PAT seed0 使用稀疏 DSDM 合成集验证点 `100/500/1000/2000/3000/5000/7500/10000`，蒸馏
+优化仍完整运行 10,000 iterations。最佳图片只在这8个固定候选中选择，并通过 immutable
+history 保留；该协议与旧 one-ResNet 每100轮验证一次的100候选协议不得混合解释。
+
+PAT10 首次稀疏运行中，AlexNet agent 2 在约 iteration 4,056 出现数值爆炸；此前保存的
+iteration 100 packet 为有限值且本地评估 `64.9`，但该未完整蒸馏的 packet 只作 diagnostic，
+不得进入正式通信结果。恢复运行保持 AlexNet 历史最优 `lr_img=0.005`，仅为 PAT10 AlexNet
+启用 `grad_clip_norm=100` 截断异常梯度尖峰，并记录实际裁剪次数和最大梯度范数。agent 2
+完整跑满 10,000 iterations 后的最佳评估不得低于 `64.9`；未通过该门槛时不运行 agent 7，
+也不进入 logits、communication 或 receiver 阶段。PAT5 按用户要求继续原运行，不受该修改影响。
+
+## CIFAR-100 teacher / guide 质量校准（seed0 已完成）
+
+该校准只回答两个问题：不同成熟度 guide 能否生成高质量 DSDM 图片，以及独立充分收敛
+expert 能否提供可信的 sender logits。它不运行 communication 或 receiver，也不改写已完成
+主实验。seed0 复用 PAT5 的 `5 agents x 20 class-disjoint classes`，使五种 backbone 各占一个
+sender；所有分类头仍为全局 100 维，packet 只保存 sender 的 20 个 expert-class logits。
+
+```text
+ConvNet-3/4 guide: 10 trajectories, snapshots at 20/50/100/200 epochs
+AlexNet guide:     10 trajectories, snapshots at 20/50/100/200 epochs
+Standard R10/R18: 10 trajectories, fixed 200-epoch guide
+DSDM per candidate: IPC=10, factor=2, 10,000 iterations
+Evaluation checkpoints: 100/500/1000/2000/3000/5000/7500/10000
+```
+
+guide 轨迹保持对应 DSDM 训练形式，仅改变成熟度；这样 guide-epoch 扫描不混入额外 augmentation
+变量。logit teacher 与 guide 完全分离：ConvNet 使用当前 centralized upper-bound 已验证的
+500-epoch DSDM-style DiffAug + CutMix recipe，AlexNet 使用 500-epoch crop/flip recipe，标准
+ResNet-10/18 使用 200-epoch crop/flip + cosine recipe。每个 teacher 从本地训练集按类固定留出
+10% validation，每 5 epochs 检查一次，最高 validation accuracy 的最早 epoch 被选中，再从头
+使用完整本地训练集重训相同 epoch 数；官方 expert-class test 不参与 epoch 选择。
+
+正式质量门禁要求：DSDM 完整跑满、raw images 与 decoded logits 全部有限、raw image count 和
+logit 维度正确、teacher checkpoint 带 SHA-256 且 `test_used_for_selection=false`。每个架构按
+synthetic evaluator accuracy 选择 guide maturity，并同时报告 teacher validation/test accuracy、
+packet-label agreement、logit entropy、top-1 margin 和幅值。性能门禁暂定为成熟 teacher 本地
+test accuracy 不低于 70%、packet-label agreement 不低于 70%，以及最佳 synthetic accuracy
+相对同一 PAT5 sender 的旧结果下降不超过 2 个百分点。ResNet 的旧参考来自 compact 版本，
+因此只作为最低质量下限，不作为 standard-vs-compact 公平增益结论。
+
+质量校准的完整证据位于 `outputs/teacher_quality_seed0_summary/summary.json`，五个 backbone
+均通过结构、teacher、logit agreement 和 image quality 门禁。该校准使用 PAT5 的 20 类 sender，
+因此其 packet 不能直接当作 100 类图片池。
+
+## CIFAR-100 backbone-specific 全类 DSDM 图片池（运行中）
+
+该阶段用于验证并保存五种 backbone 各自的全类图片池，不运行 social communication 或 receiver。
+每个独立 run 使用完整 CIFAR-100 训练集的 `0-99` 类，保留 global class index；这是一种用于
+前期逻辑验证的可复用图片池协议，不等同于主实验中 sender 只见自己 expert classes 的本地
+DSDM，后续论文必须明确该协议差异。
+
+```text
+Backbones: ConvNet-3, ConvNet-4, AlexNet, standard ResNet-10, standard ResNet-18
+Agents: 1 per run, agent_0 classes = 0-99, classifier output = 100
+Guide pool: 10 models, selected maturity = 200 epochs
+DSDM: IPC=10, factor=2, 10,000 iterations
+Evaluation checkpoints: 100/500/1000/2000/3000/5000/7500/10000
+Run names: cifar100_fullclass_dsdm_<backbone>_ipc10_seed0
+```
+
+该图片池只保存 synthetic images、global class indices、best-iteration manifest 和 packet
+provenance，不在池构建阶段附加 sender logits；未来通信时按接收方需要的类别从对应
+backbone 池索引图片。每个池的 `class_ids` 必须严格等于 `0-99`，每类 raw image 数为 10，
+factor decode 后每类训练视图为 40。
+
 ## Tiny-ImageNet 扩展（50 类诊断完成，all-200 运行中）
 
 Tiny-ImageNet 是下一数据集扩展，不属于当前完成的正式结果。目标协议为 200 类、4 agents ×

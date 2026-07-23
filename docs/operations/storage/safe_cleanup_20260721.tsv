@@ -1,0 +1,12 @@
+path	bytes	category	reason	approval
+outputs/masc_official_smoke	444682087	smoke_output	explicit smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+outputs/tinyimagenet_backbone_smoke_20260718_resnet18_seed0	180553584	smoke_output	explicit backbone smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+external_baselines/outputs/desa_official_smoke	116503280	smoke_output	explicit external baseline smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+outputs/tinyimagenet_backbone_smoke_20260718_alexnet_seed0	113298021	smoke_output	explicit backbone smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+outputs/tinyimagenet_r18_agent0_dsdm_pcbn_logic_smoke_v2_20260718	50852359	smoke_output	explicit logic smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+outputs/tinyimagenet_r18_agent0_dsdm_pcbn_logic_smoke_20260718	46086496	smoke_output	explicit logic smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+outputs/tinyimagenet_backbone_smoke_20260718_convnet4_seed0	25912070	smoke_output	explicit backbone smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+outputs/tinyimagenet_backbone_smoke_20260718_mobilenetv2_seed0	20350459	smoke_output	explicit backbone smoke run; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+external_baselines/outputs/smoke	10	smoke_output	empty smoke directory; not referenced by registry/config/current queue	user approved safest large-file cleanup on 2026-07-21
+data/tiny-imagenet-200.zip	248100043	download_archive	dataset is already extracted at data/tiny-imagenet-200	user approved safest large-file cleanup on 2026-07-21
+data/cifar-100-python.tar.gz	169001437	download_archive	dataset is already extracted at data/cifar-100-python	user approved safest large-file cleanup on 2026-07-21

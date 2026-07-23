@@ -1,30 +1,29 @@
 # Current Status
 
-更新时间：`2026-07-19 17:47 +08:00`
+更新时间：`2026-07-23 05:16 UTC`
 
 ## 活动队列
 
 ```text
-Queue: scripts/run_tiny_r18_all200_dsdm_pcbn_pair.sh
-Queue PID/PGID: 17898 / 17898
-Current stage: train all-200 ResNet-18 guide pool (10 models x 100 epochs)
-Snapshot: guide models 0-2 complete; guide model 3 at about epoch 70/100
-Next stage: all-200 pure DSDM and DSDM+PCBN distillation launch concurrently
-Scope: Tiny-ImageNet all classes 0-199 packet-quality diagnostic only; no logits/receivers/social
-Protocol: IPC10, factor2, niter10000, seed0, validation at 100/500/1000/2000/3000/5000/7500/10000
-PCBN: all 20 BN layers, normalized, calibrated weight 10000 (not a completed hyperparameter search)
-Data gate: outputs/tinyimagenet_data_validation_20260718/data_integrity.json (passed)
-Raw/effective budget: 2,000 raw synthetic images / 8,000 factor-decoded training views
-Guide pool: new all-200 ResNet-18 pool, 10 models x 100 epochs, shared byte-identically
-Configs: configs/tinyimagenet_r18_all200_dsdm_ipc10_seed0.yaml
-         configs/tinyimagenet_r18_all200_dsdm_pcbn_ipc10_seed0.yaml
-Logs: logs/tinyimagenet_r18_all200_dsdm_pcbn_pair/
-Completed predecessor: 50-class pair exit=0 on 2026-07-19 12:32 +08:00
-Completed 50-class best: pure DSDM 32.5460 at iter2000; PCBN 33.5869 at iter5000
-Completed result summary: experiments/diagnostics/tinyimagenet_r18_50class_dsdm_pcbn_seed0.json
-Stopped queue: scripts/run_one_resnet_main_queue.sh
-Stopped stage: seed1 IPC=50 distill agent1 (AlexNet, classes 25-49)
-Stopped progress: about 17% / 10,000 iterations
+Full-class DSDM queue active; ConvNet-3 and ConvNet-4 guide pools are training in parallel.
+Launcher PID/PGID: 165235 / 165235. Teacher-quality seed0 calibration completed at 2026-07-23T01:22:44Z.
+Scope completed: 5 teacher runs + 14 DSDM guide-maturity candidates; image/logit quality only.
+Quality summary: outputs/teacher_quality_seed0_summary/summary.json (`passed=true`, complete=true).
+Selected guide: epoch 200 for ConvNet-3/4, AlexNet, standard ResNet-10/18.
+No communication or receiver stage was started from this queue.
+Launcher: scripts/run_teacher_quality_seed0_parallel.sh.
+Status/logs: logs/teacher_quality_seed0/.
+Current GPU: full-class guide training active; current disk free: about 12 GiB. Do not move or
+delete full-class configs, outputs, packet sources or logs while this queue is active.
+PAT5 seed0: launcher exit 0 at 2026-07-22T11:22:03Z; 5 packets, logits, communication,
+            and 5 receiver outputs are present.
+PAT10 seed0: original queue stopped on the AlexNet numerical issue; recovery agent 3 completed
+             DSDM but exited 1 on the old nested packet-path check. Main valid packets currently
+             exist for agents 0, 1, and 3; agent 2 remains diagnostic-only; agents 4-9 are not complete.
+Scope: CIFAR-100 original train/test; PAT-style class-disjoint allocation only.
+PAT sparse evaluation: 100/500/1000/2000/3000/5000/7500/10000.
+Configs: configs/pat_class_split/ and configs/teacher_quality/.
+Logs: logs/pat_class_split_seed0/ and logs/teacher_quality_seed0/.
 ```
 
 Tiny centralized backbone validation is complete; retained outputs are:
@@ -36,9 +35,13 @@ outputs/tinyimagenet_backbone_validation_alexnet_seed0/
 outputs/tinyimagenet_backbone_validation_mobilenetv2_seed0/
 ```
 
-Do not move the active configs, Tiny data root, integrity report, launcher, logs, guide source, or
-output directories while PID 17898 is alive. ResNet-34/50 are not queued
-because the standard ResNet-18 first-layer result is already sufficient for DSDM validation.
+Teacher-quality is no longer active. Do not delete or move its configs, logs, packet sources, or
+outputs without a cleanup manifest and user confirmation. Full-class DSDM configs are in
+`configs/fullclass_dsdm/`, outputs are in `outputs/cifar100_fullclass_dsdm_*`, and logs/status are in
+`logs/fullclass_dsdm_seed0/`. Do not delete or move PAT configs, logs,
+packet sources, or partial outputs without the cleanup manifest and user confirmation. PAT10 downstream logits/communication/
+receiver remain intentionally unstarted because the class-split run is incomplete. The earlier
+Tiny-ImageNet all-200 queue is not currently running.
 
 `one_resnet_ours_ipc50` 已按用户决定固定为 seed0/2 的 complete 两种子结果。seed1 没有形成
 完整 receiver 结果，其 agent0 complete artifact 和 agent1 partial artifact 只作保留记录。

@@ -218,16 +218,72 @@ def build_agent_args(base_cfg, config_path, agent_id):
     args.sender_model = args.model_name
     _refresh_model_metadata(args)
     _refresh_feature_indices(args)
+    guide_cfg = model_cfg.get("guide_training", {})
     expert_cfg = model_cfg.get("expert_training", {})
+    args.separate_expert = bool(expert_cfg.get("separate", False))
+
+    if guide_cfg:
+        args.pretrained_model_number = int(guide_cfg.get("num_models", args.pretrained_model_number))
+        args.pretrained_epochs = int(guide_cfg.get("max_epochs", guide_cfg.get("epochs", args.pretrained_epochs)))
+        args.guide_model_number = args.pretrained_model_number
+        args.guide_max_epochs = args.pretrained_epochs
+        args.guide_snapshot_epochs = sorted(
+            {int(v) for v in guide_cfg.get("snapshot_epochs", [args.guide_max_epochs])}
+        )
+        args.guide_epoch = int(guide_cfg.get("selected_epoch", args.guide_max_epochs))
+        if args.guide_epoch not in args.guide_snapshot_epochs:
+            args.guide_snapshot_epochs.append(args.guide_epoch)
+            args.guide_snapshot_epochs.sort()
+        args.guide_lr = float(guide_cfg.get("lr", args.lr))
+        args.guide_batch_size = int(guide_cfg.get("batch_size", args.batch_size))
+        args.guide_augment = bool(guide_cfg.get("augment", False))
+        args.guide_scheduler = str(guide_cfg.get("scheduler", "none"))
+        args.guide_scheduler_milestones = [int(v) for v in guide_cfg.get("scheduler_milestones", [])]
+        args.guide_scheduler_gamma = float(guide_cfg.get("scheduler_gamma", 0.1))
+        args.guide_source_root = guide_cfg.get("source_root")
+    else:
+        # Legacy runs trained one pool and then selected an expert from that pool.
+        if expert_cfg and not args.separate_expert:
+            args.pretrained_model_number = int(expert_cfg.get("num_models", args.pretrained_model_number))
+            args.pretrained_epochs = int(expert_cfg.get("epochs", args.pretrained_epochs))
+        args.guide_model_number = int(args.pretrained_model_number)
+        args.guide_max_epochs = int(args.pretrained_epochs)
+        args.guide_snapshot_epochs = [int(args.pretrained_epochs)]
+        args.guide_epoch = int(args.pretrained_epochs)
+        args.guide_lr = float(expert_cfg.get("lr", args.lr))
+        args.guide_batch_size = int(expert_cfg.get("batch_size", args.batch_size))
+        args.guide_augment = bool(expert_cfg.get("augment", False))
+        args.guide_scheduler = str(expert_cfg.get("scheduler", "none"))
+        args.guide_scheduler_milestones = [int(v) for v in expert_cfg.get("scheduler_milestones", [])]
+        args.guide_scheduler_gamma = float(expert_cfg.get("scheduler_gamma", 0.1))
+        args.guide_source_root = None
+
     if expert_cfg:
-        args.pretrained_model_number = int(expert_cfg.get("num_models", args.pretrained_model_number))
-        args.pretrained_epochs = int(expert_cfg.get("epochs", args.pretrained_epochs))
+        args.expert_epochs = int(expert_cfg.get("epochs", args.pretrained_epochs))
         args.expert_lr = float(expert_cfg.get("lr", args.lr))
         args.expert_batch_size = int(expert_cfg.get("batch_size", args.batch_size))
         args.expert_augment = bool(expert_cfg.get("augment", False))
         args.expert_scheduler = str(expert_cfg.get("scheduler", "none"))
         args.expert_scheduler_milestones = [int(v) for v in expert_cfg.get("scheduler_milestones", [])]
         args.expert_scheduler_gamma = float(expert_cfg.get("scheduler_gamma", 0.1))
+        args.expert_validation_fraction = float(expert_cfg.get("validation_fraction", 0.1))
+        args.expert_eval_interval = int(expert_cfg.get("eval_interval", 5))
+        args.expert_retrain_full = bool(expert_cfg.get("retrain_full", True))
+        args.expert_use_dsdm_train = bool(expert_cfg.get("use_dsdm_train", False))
+        args.expert_source_root = expert_cfg.get("source_root")
+    else:
+        args.expert_epochs = int(args.pretrained_epochs)
+        args.expert_lr = float(args.lr)
+        args.expert_batch_size = int(args.batch_size)
+        args.expert_augment = False
+        args.expert_scheduler = "none"
+        args.expert_scheduler_milestones = []
+        args.expert_scheduler_gamma = 0.1
+        args.expert_validation_fraction = 0.1
+        args.expert_eval_interval = 5
+        args.expert_retrain_full = True
+        args.expert_use_dsdm_train = False
+        args.expert_source_root = None
     # 应用 per-model 蒸馏参数覆盖，并在 f_idx 覆盖后同步实际 DSDM 特征层。
     distill_override = model_cfg.get("distillation", {})
     if distill_override.get("f_idx") is not None:
@@ -235,6 +291,8 @@ def build_agent_args(base_cfg, config_path, agent_id):
         _refresh_feature_indices(args)
     if distill_override.get("lr_img") is not None:
         args.lr_img = float(distill_override["lr_img"])
+    if distill_override.get("grad_clip_norm") is not None:
+        args.grad_clip_norm = float(distill_override["grad_clip_norm"])
     if distill_override.get("niter") is not None:
         args.niter = int(distill_override["niter"])
     if "evaluate_iter" in distill_override:

@@ -25,6 +25,7 @@ from pathlib import Path
 import random
 from pcbn import PCBNRegularizer
 from evaluation_schedule import resolve_evaluation_iterations
+from numerical_guard import clip_and_validate_gradients, ensure_finite_tensor
 
 
 class ActiveClassDataset(torch.utils.data.Dataset):
@@ -605,6 +606,10 @@ def condense(args, logger, device='cuda'):
 
     best_acc = resume_best_acc
     pcbn_regularizer = PCBNRegularizer(args, logger)
+    grad_clip_norm = float(getattr(args, 'grad_clip_norm', 0.0) or 0.0)
+    grad_clip_count = 0
+    max_grad_norm = 0.0
+    logger(f"Synthetic gradient clipping: {grad_clip_norm if grad_clip_norm > 0 else 'disabled'}")
 
     smooth_syns = {class_id: None for class_id in active_class_ids}
     h_p = {class_id: None for class_id in active_class_ids}
@@ -626,6 +631,7 @@ def condense(args, logger, device='cuda'):
 
         loss_total = 0
         pcbn_loss_total = 0
+        ensure_finite_tensor(synset.data, 'synthetic images', iteration=it, guide_idx=j)
         synset.data.data = torch.clamp(synset.data.data, min=0., max=1.)
         ts.set()
 
@@ -646,10 +652,33 @@ def condense(args, logger, device='cuda'):
             if pcbn_loss is not None:
                 loss = loss + pcbn_loss
                 pcbn_loss_total += float(pcbn_loss.detach().item())
-            loss_total += loss.item()
+            ensure_finite_tensor(
+                loss.detach(),
+                'DSDM loss',
+                iteration=it,
+                class_id=c,
+                guide_idx=j,
+            )
+            loss_total += float(loss.detach().item())
             ts.stamp("loss")
             loss.backward()
+            grad_norm, was_clipped = clip_and_validate_gradients(
+                synset.parameters(),
+                grad_clip_norm,
+                iteration=it,
+                class_id=c,
+                guide_idx=j,
+            )
+            max_grad_norm = max(max_grad_norm, grad_norm)
+            grad_clip_count += int(was_clipped)
             optim_img.step()
+            ensure_finite_tensor(
+                synset.data,
+                'updated synthetic images',
+                iteration=it,
+                class_id=c,
+                guide_idx=j,
+            )
             ts.stamp("backward")
             ts.flush()
      
@@ -662,23 +691,50 @@ def condense(args, logger, device='cuda'):
                 with torch.no_grad():
                     feature_h = get_feature_list(model, syn_img_aug, args.idx_from, args.idx_to)
                 smooth_syns[c] = feature_h[len(feature_h)-1].mean(0)
+                ensure_finite_tensor(
+                    smooth_syns[c],
+                    'synthetic feature prototype',
+                    iteration=it,
+                    class_id=c,
+                    guide_idx=j,
+                )
                 h_p[c] = smooth_syns[c]
             else:
                 with torch.no_grad():
                     feature_h = get_feature_list(model, syn_img_aug, args.idx_from, args.idx_to)
                 smooth_syns[c] = feature_h[len(feature_h)-1].mean(0)
+                ensure_finite_tensor(
+                    smooth_syns[c],
+                    'synthetic feature prototype',
+                    iteration=it,
+                    class_id=c,
+                    guide_idx=j,
+                )
                 h_p[c] = (1 -args.smooth_factor) * smooth_syns[c] + args.smooth_factor * h_p[c]
+                ensure_finite_tensor(
+                    h_p[c],
+                    'smoothed feature prototype',
+                    iteration=it,
+                    class_id=c,
+                    guide_idx=j,
+                )
 
          # Logging
         if it % it_log == 0:
             loss_msg = f"{utils.get_time()} (Iter {it:3d}) loss: {loss_total/len(active_class_ids):.1f}"
             if pcbn_regularizer.enabled:
                 loss_msg += f" pcbn: {pcbn_loss_total/len(active_class_ids):.4f}"
+            if grad_clip_norm > 0:
+                loss_msg += f" grad_max: {max_grad_norm:.2f} clipped: {grad_clip_count}"
             logger(
                 loss_msg)
         if (it + 1) in it_test:
             if not args.test:
                 conv_result = synset.test(args, val_loader, logger)
+                if not np.isfinite(conv_result):
+                    raise FloatingPointError(
+                        f"non-finite synthetic evaluation at iteration={it + 1}: {conv_result}"
+                    )
                 if conv_result > best_acc:
                     best_acc = conv_result
                     torch.save(
@@ -698,11 +754,19 @@ def condense(args, logger, device='cuda'):
                             'iteration': int(it + 1),
                             'sender_agent': getattr(args, 'agent_id', None),
                             'sender_model': getattr(args, 'sender_model', getattr(args, 'net_type', '')),
+                            'guide_epoch': int(getattr(args, 'guide_epoch', args.pretrained_epochs)),
+                            'guide_model_count': int(args.pretrained_model_number),
+                            'guide_source_root': getattr(args, 'guide_source_root', None),
+                            'guide_pretrained_manifest': str(
+                                Path(args.save_pretrain_dir) / 'pretrained_manifest.json'
+                            ),
                             'factor': int(args.factor),
                             'decode_type': args.decode_type,
                             'packet_format': 'compact_multi_formation',
                             'pcbn_enabled': bool(pcbn_regularizer.enabled),
                             'pcbn_weight': float(pcbn_regularizer.weight),
+                            'lr_img': float(args.lr_img),
+                            'grad_clip_norm': float(grad_clip_norm),
                         },
                     )
                     _try_stage1_output(
@@ -728,7 +792,18 @@ def condense(args, logger, device='cuda'):
 
     if progress is not None:
         progress.close(extra=f"best={best_acc:.1f}")
+    logger(
+        f"DSDM numerical summary: max_grad_norm={max_grad_norm:.6g} "
+        f"grad_clip_count={grad_clip_count}"
+    )
     pcbn_regularizer.close()
+    return {
+        'best_acc': float(best_acc),
+        'completed_iterations': int(args.niter),
+        'grad_clip_norm': float(grad_clip_norm),
+        'grad_clip_count': int(grad_clip_count),
+        'max_grad_norm': float(max_grad_norm),
+    }
 
 
 def run_dsdm(args):
@@ -760,7 +835,7 @@ def run_dsdm(args):
     with open(os.path.join(args.save_dir, 'args.txt'), 'w') as f:
         json.dump(args.__dict__, f, indent=2)
 
-    condense(args, logger)
+    return condense(args, logger)
 
 
 if __name__ == '__main__':
