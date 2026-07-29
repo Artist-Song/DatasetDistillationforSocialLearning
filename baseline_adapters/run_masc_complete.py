@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import importlib.util
 import json
 import random
 import sys
@@ -24,21 +26,41 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import datasets, transforms
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 MASC_ROOT = ROOT / "external_baselines/repos/MASC_SL/MASC_SL_inference_CIFAR100_raw_4_25"
-sys.path.insert(0, str(MASC_ROOT))
 
-from utils.network_wider_cifar100 import Netwider, Netwider_multi  # noqa: E402
+from agent_data import get_agent_class_split  # noqa: E402
+from config_adapter import load_config  # noqa: E402
 
 
-CLASS_SPLIT = {agent: list(range(agent * 25, (agent + 1) * 25)) for agent in range(4)}
+def _load_masc_network_module():
+    path = MASC_ROOT / "utils/network_wider_cifar100.py"
+    spec = importlib.util.spec_from_file_location("_masc_network_wider_cifar100", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load MASC network module: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_MASC_NETWORKS = _load_masc_network_module()
+Netwider = _MASC_NETWORKS.Netwider
+Netwider_multi = _MASC_NETWORKS.Netwider_multi
+
+
+LEGACY_CLASS_SPLIT = {agent: list(range(agent * 25, (agent + 1) * 25)) for agent in range(4)}
 MEAN = (0.485, 0.456, 0.406)
 STD = (0.229, 0.224, 0.225)
 
 
 @dataclass(frozen=True)
 class Settings:
+    config: str | None
+    config_sha256: str | None
+    source_run_name: str
+    class_split: dict[int, list[int]]
     budget: str
     seed: int
     data_dir: str
@@ -118,12 +140,12 @@ class Expert(nn.Module):
 class CollectiveStudent(nn.Module):
     """Official wide student plus teacher-head projections used during CC."""
 
-    def __init__(self):
+    def __init__(self, num_agents: int):
         super().__init__()
         official = Netwider_multi(13)
         self.backbone = official.layers
         self.general_head = nn.Sequential(*list(official.classifier[:-1]))
-        self.teacher_heads = nn.ModuleList(LogitHead() for _ in range(4))
+        self.teacher_heads = nn.ModuleList(LogitHead() for _ in range(int(num_agents)))
 
     def embed(self, images: torch.Tensor) -> torch.Tensor:
         output = images
@@ -138,6 +160,11 @@ class CollectiveStudent(nn.Module):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Reproduce complete MASC with IPC-limited CC images.")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Project config supplying the current class-disjoint agent split; omitted only for legacy 4x25 runs.",
+    )
     parser.add_argument("--budget", nargs="+", choices=["full", "10", "50"], default=["full", "10", "50"])
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--data-dir", default=str(ROOT / "data"))
@@ -194,11 +221,31 @@ def indices_for_classes(targets, classes: list[int]) -> list[int]:
     return [index for index, target in enumerate(targets) if int(target) in allowed]
 
 
-def communication_indices(targets, ipc: int, seed: int) -> dict[int, list[int]]:
+def validate_class_split(class_split: dict[int, list[int]]) -> None:
+    if sorted(class_split) != list(range(len(class_split))):
+        raise ValueError("MASC agent IDs must be contiguous from zero")
+    flattened = [int(class_id) for classes in class_split.values() for class_id in classes]
+    if len(flattened) != 100 or sorted(flattened) != list(range(100)):
+        raise ValueError("MASC class sets must be a disjoint global-label cover of CIFAR-100")
+    if len({len(classes) for classes in class_split.values()}) != 1:
+        raise ValueError("MASC scaling protocol requires balanced class counts")
+
+
+def class_membership_mask(labels: torch.Tensor, classes: list[int]) -> torch.Tensor:
+    allowed = torch.tensor(classes, dtype=labels.dtype, device=labels.device)
+    return (labels[:, None] == allowed[None, :]).any(dim=1)
+
+
+def communication_indices(
+    targets,
+    ipc: int,
+    seed: int,
+    class_split: dict[int, list[int]],
+) -> dict[int, list[int]]:
     rng = np.random.default_rng(seed)
     selected: dict[int, list[int]] = {}
     target_array = np.asarray(targets)
-    for agent, classes in CLASS_SPLIT.items():
+    for agent, classes in class_split.items():
         selected[agent] = []
         for class_id in classes:
             candidates = np.flatnonzero(target_array == class_id)
@@ -257,6 +304,7 @@ def train_expert(model: Expert, data_loader: DataLoader, cfg: Settings, device: 
 def train_cc(
     student: CollectiveStudent,
     experts: dict[int, Expert],
+    class_split: dict[int, list[int]],
     data_loader: DataLoader,
     cfg: Settings,
     device: torch.device,
@@ -274,8 +322,8 @@ def train_cc(
             features, general_logits = student(images)
             ce = F.cross_entropy(general_logits, labels)
             kd = torch.zeros((), device=device)
-            for agent, classes in CLASS_SPLIT.items():
-                mask = (labels >= classes[0]) & (labels <= classes[-1])
+            for agent, classes in class_split.items():
+                mask = class_membership_mask(labels, classes)
                 if mask.any():
                     with torch.no_grad():
                         teacher_logits = experts[agent](images[mask])
@@ -367,8 +415,12 @@ def matching_checkpoint(path: Path, metadata: dict, force: bool) -> bool:
 
 def train_or_load_experts(cfg: Settings, train, device, run_root: Path, log) -> dict[int, Expert]:
     experts = {}
-    expert_root = Path(cfg.output_root) / f"experts_seed{cfg.seed}"
-    for agent, classes in CLASS_SPLIT.items():
+    expert_root = (
+        Path(cfg.output_root) / f"experts_seed{cfg.seed}"
+        if cfg.config is None
+        else Path(cfg.output_root) / "expert_sets" / cfg.source_run_name
+    )
+    for agent, classes in cfg.class_split.items():
         path = expert_root / f"agent_{agent}.pt"
         meta = {
             "stage": "expert",
@@ -425,7 +477,13 @@ def validate_full_result(path: Path) -> None:
 def run(cfg: Settings) -> Path:
     set_seed(cfg.seed)
     device = resolve_device(cfg.device)
-    run_root = Path(cfg.output_root) / f"seed{cfg.seed}_{cfg.budget}"
+    legacy = cfg.config is None
+    run_name = (
+        f"seed{cfg.seed}_{cfg.budget}"
+        if legacy
+        else f"{cfg.source_run_name}_masc_homogeneous_{cfg.budget}"
+    )
+    run_root = Path(cfg.output_root) / run_name
     run_root.mkdir(parents=True, exist_ok=True)
     log_path = run_root / "run.log"
 
@@ -435,16 +493,24 @@ def run(cfg: Settings) -> Path:
             handle.write(message + "\n")
 
     log(f"[start] MASC-complete seed={cfg.seed} budget={cfg.budget} ipc={cfg.ipc} device={device}")
-    (run_root / "resolved_config.json").write_text(json.dumps(asdict(cfg), indent=2), encoding="utf-8")
+    resolved_config = asdict(cfg)
+    resolved_config["ipc"] = cfg.ipc
+    resolved_config["protocol"] = "homogeneous_masc_complete_current_class_split_v1"
+    (run_root / "resolved_config.json").write_text(
+        json.dumps(resolved_config, indent=2, sort_keys=True), encoding="utf-8"
+    )
     train, test = load_data(cfg.data_dir)
     experts = train_or_load_experts(cfg, train, device, run_root, log)
 
-    selected = communication_indices(train.targets, cfg.ipc, cfg.seed)
+    selected = communication_indices(train.targets, cfg.ipc, cfg.seed, cfg.class_split)
     (run_root / "communication_indices.json").write_text(json.dumps(selected), encoding="utf-8")
     cc_indices = [index for agent in sorted(selected) for index in selected[agent]]
-    log(f"[communication] {len(cc_indices)} real images total; {25 * cfg.ipc} per sender")
+    sender_counts = {
+        agent: len(classes) * cfg.ipc for agent, classes in cfg.class_split.items()
+    }
+    log(f"[communication] {len(cc_indices)} real images total; per_sender={sender_counts}")
 
-    student = CollectiveStudent()
+    student = CollectiveStudent(len(cfg.class_split))
     cc_path = run_root / "cc_student.pt"
     cc_meta = {
         "stage": "CC",
@@ -457,25 +523,26 @@ def run(cfg: Settings) -> Path:
         "lambda_align": cfg.lambda_align,
         "energy_anchor": cfg.energy_anchor,
         "temperature": cfg.temperature,
+        "class_split": {str(agent): classes for agent, classes in cfg.class_split.items()},
     }
     if matching_checkpoint(cc_path, cc_meta, cfg.force):
         student.load_state_dict(torch.load(cc_path, map_location="cpu", weights_only=True))
         log(f"[CC] reuse {cc_path}")
     else:
-        train_cc(student, experts, loader(train, cc_indices, cfg), cfg, device, log)
+        train_cc(student, experts, cfg.class_split, loader(train, cc_indices, cfg), cfg, device, log)
         save_checkpoint(cc_path, student.state_dict(), cc_meta)
 
     all_test = list(range(len(test)))
     before = {}
     for agent, expert in experts.items():
         expert.to(device).eval()
-        own = indices_for_classes(test.targets, CLASS_SPLIT[agent])
+        own = indices_for_classes(test.targets, cfg.class_split[agent])
         if cfg.smoke:
             own = own[: cfg.eval_batch_size]
         before[agent] = accuracy(expert, test, own, cfg.eval_batch_size, device)
 
     grown_heads = {}
-    for agent, classes in CLASS_SPLIT.items():
+    for agent, classes in cfg.class_split.items():
         path = run_root / f"ra_agent_{agent}.pt"
         meta = {
             "stage": "RA",
@@ -500,7 +567,10 @@ def run(cfg: Settings) -> Path:
 
     student.to(device).eval()
     rows = []
-    for agent, classes in CLASS_SPLIT.items():
+    expert_upload_bytes = sum(parameter_bytes(model) for model in experts.values())
+    student_downlink_bytes = len(cfg.class_split) * parameter_bytes(student)
+    model_interaction_bytes = expert_upload_bytes + student_downlink_bytes
+    for agent, classes in cfg.class_split.items():
         own = indices_for_classes(test.targets, classes)
         novel = [index for index in all_test if int(test.targets[index]) not in set(classes)]
         global_indices = all_test
@@ -526,9 +596,11 @@ def run(cfg: Settings) -> Path:
                 "forgetting": before[agent] - expert_acc,
                 "balanced_avg": (expert_acc + new_acc) / 2,
                 "expert_before": before[agent],
-                "comm_images_per_sender": 25 * cfg.ipc,
+                "comm_images_per_sender": sender_counts[agent],
                 "total_cc_images": len(cc_indices),
-                "model_parameter_bytes": sum(parameter_bytes(model) for model in experts.values()) + 4 * parameter_bytes(student),
+                "expert_upload_bytes_all_agents": expert_upload_bytes,
+                "cc_student_downlink_bytes_all_agents": student_downlink_bytes,
+                "model_parameter_bytes": model_interaction_bytes,
             }
         )
         log(f"[result/a{agent}] global={global_acc:.2f} new={new_acc:.2f} expert={expert_acc:.2f} forgetting={before[agent] - expert_acc:.2f}")
@@ -545,9 +617,29 @@ def run(cfg: Settings) -> Path:
 
 def main() -> None:
     args = parse_args()
+    if args.config is None:
+        class_split = LEGACY_CLASS_SPLIT
+        source_run_name = f"legacy_4agent25cls_seed{args.seed}"
+        config_sha256 = None
+    else:
+        config_path = Path(args.config).resolve()
+        project_cfg = load_config(config_path)
+        class_split = get_agent_class_split(project_cfg)
+        configured_seed = int(project_cfg.get("runtime", {}).get("seed", args.seed))
+        if configured_seed != int(args.seed):
+            raise ValueError(
+                f"MASC --seed={args.seed} differs from config runtime.seed={configured_seed}"
+            )
+        source_run_name = str(project_cfg["project"]["run_name"])
+        config_sha256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    validate_class_split(class_split)
     full_result = None
     for budget in args.budget:
         cfg = Settings(
+            config=str(Path(args.config).resolve()) if args.config else None,
+            config_sha256=config_sha256,
+            source_run_name=source_run_name,
+            class_split=class_split,
             budget=budget,
             seed=args.seed,
             data_dir=args.data_dir,

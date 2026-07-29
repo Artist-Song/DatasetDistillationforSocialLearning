@@ -1,0 +1,470 @@
+project:
+  name: social_packet_learning
+  stage: iclr2027_heuristic_hard_label_scaling
+  output_root: ./outputs
+  run_name: cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed3_v1
+  comparability_group: cifar100_10agent10cls_ipc10_image_budget
+  paper_eligible: false
+  protocol_status: planned_baseline
+dataset:
+  name: cifar100
+  data_dir: ./data
+  num_classes: 100
+  image_size: 32
+  partition: nested_10agent_class_disjoint_fullclass_pool_slice
+  source_split: original_cifar100_train_test
+  class_assignment: numpy_randomstate_permutation
+  class_assignment_seed: 3
+model_pool:
+  default: convnet3w1
+  models:
+    convnet3w1:
+      family: convnet
+      depth: 3
+      width: 1.0
+      norm_type: instance
+      distillation:
+        f_idx: '2'
+        lr_img: 0.1
+        niter: 10000
+      guide_training:
+        num_models: 10
+        max_epochs: 200
+        snapshot_epochs:
+        - 20
+        - 50
+        - 100
+        - 200
+        selected_epoch: 200
+        lr: 0.01
+        batch_size: 128
+        augment: false
+        scheduler: multistep
+        scheduler_milestones:
+        - 100
+        - 150
+        scheduler_gamma: 0.2
+      expert_training:
+        separate: true
+        epochs: 500
+        lr: 0.01
+        batch_size: 128
+        augment: false
+        use_dsdm_train: true
+        scheduler: multistep
+        scheduler_milestones:
+        - 333
+        - 416
+        scheduler_gamma: 0.2
+        validation_fraction: 0.1
+        eval_interval: 5
+        retrain_full: true
+        masked_local_ce: true
+      classifier:
+        type: cosine
+        scale_init: 10.0
+    convnet4w15:
+      family: convnet
+      depth: 4
+      width: 1.5
+      norm_type: instance
+      distillation:
+        f_idx: '3'
+        lr_img: 0.1
+        niter: 10000
+      guide_training:
+        num_models: 10
+        max_epochs: 200
+        snapshot_epochs:
+        - 20
+        - 50
+        - 100
+        - 200
+        selected_epoch: 200
+        lr: 0.01
+        batch_size: 128
+        augment: false
+        scheduler: multistep
+        scheduler_milestones:
+        - 100
+        - 150
+        scheduler_gamma: 0.2
+      expert_training:
+        separate: true
+        epochs: 500
+        lr: 0.01
+        batch_size: 128
+        augment: false
+        use_dsdm_train: true
+        scheduler: multistep
+        scheduler_milestones:
+        - 333
+        - 416
+        scheduler_gamma: 0.2
+        validation_fraction: 0.1
+        eval_interval: 5
+        retrain_full: true
+        masked_local_ce: true
+      classifier:
+        type: cosine
+        scale_init: 10.0
+    alexnet:
+      family: alexnet
+      norm_type: batch
+      distillation:
+        f_idx: '7'
+        lr_img: 0.005
+        niter: 10000
+      guide_training:
+        num_models: 10
+        max_epochs: 200
+        snapshot_epochs:
+        - 20
+        - 50
+        - 100
+        - 200
+        selected_epoch: 200
+        lr: 0.01
+        batch_size: 128
+        augment: false
+        scheduler: multistep
+        scheduler_milestones:
+        - 100
+        - 150
+        scheduler_gamma: 0.2
+      expert_training:
+        separate: true
+        epochs: 500
+        lr: 0.01
+        batch_size: 128
+        augment: true
+        use_dsdm_train: false
+        scheduler: multistep
+        scheduler_milestones:
+        - 333
+        - 416
+        scheduler_gamma: 0.2
+        validation_fraction: 0.1
+        eval_interval: 5
+        retrain_full: true
+        masked_local_ce: true
+      classifier:
+        type: cosine
+        scale_init: 10.0
+    resnet10_standard:
+      family: resnet_cifar_standard
+      display_name: ResNet-10-CIFAR-w1.0
+      depth: 10
+      norm_type: batch
+      distillation:
+        f_idx: '5'
+        lr_img: 0.01
+        niter: 10000
+      guide_training:
+        num_models: 10
+        max_epochs: 200
+        snapshot_epochs:
+        - 200
+        selected_epoch: 200
+        lr: 0.1
+        batch_size: 128
+        augment: true
+        scheduler: cosine
+        scheduler_milestones: []
+        scheduler_gamma: 0.1
+      expert_training:
+        separate: true
+        epochs: 200
+        lr: 0.1
+        batch_size: 128
+        augment: true
+        use_dsdm_train: false
+        scheduler: cosine
+        scheduler_milestones: []
+        scheduler_gamma: 0.1
+        validation_fraction: 0.1
+        eval_interval: 5
+        retrain_full: true
+        masked_local_ce: true
+      classifier:
+        type: cosine
+        scale_init: 10.0
+    resnet18_standard:
+      family: resnet_cifar_standard
+      display_name: ResNet-18-CIFAR-w1.0
+      depth: 18
+      norm_type: batch
+      distillation:
+        f_idx: '5'
+        lr_img: 0.01
+        niter: 10000
+      guide_training:
+        num_models: 10
+        max_epochs: 200
+        snapshot_epochs:
+        - 200
+        selected_epoch: 200
+        lr: 0.1
+        batch_size: 128
+        augment: true
+        scheduler: cosine
+        scheduler_milestones: []
+        scheduler_gamma: 0.1
+      expert_training:
+        separate: true
+        epochs: 200
+        lr: 0.1
+        batch_size: 128
+        augment: true
+        use_dsdm_train: false
+        scheduler: cosine
+        scheduler_milestones: []
+        scheduler_gamma: 0.1
+        validation_fraction: 0.1
+        eval_interval: 5
+        retrain_full: true
+        masked_local_ce: true
+      classifier:
+        type: cosine
+        scale_init: 10.0
+distillation:
+  method: dsdm
+  ipc: 10
+  factor: 2
+  init: mix
+  decode_type: single
+  aug_type: color_crop_cutout
+  match: semantic
+  metric: mse
+  f_idx: '2'
+  niter: 10000
+  evaluate_iterations:
+  - 100
+  - 500
+  - 1000
+  - 2000
+  - 3000
+  - 5000
+  - 7500
+  - 10000
+  lr_img: 0.1
+  mom_img: 0.5
+  batch_real: 256
+  batch_syn_max: 256
+  smooth_iter: 2000
+  cov_weight: 50.0
+  h_p_weight: 0.2
+  smooth_factor: 0.99
+  pretrained_model_number: 10
+  pretrained_epochs: 20
+selection:
+  enabled: true
+  methods:
+  - heuristic
+  heuristic:
+    strategy: random_per_class
+packet:
+  enabled: true
+  format: hard_label_images
+communication:
+  enabled: true
+  protocol: hard_label_cifar100_10x10_heuristic_v1
+  mode: logical_all_share_once
+  use_sender_logits: false
+  use_generalist_logits: false
+  receiver_protocol: dkp_sl_v1
+  packet_source: sender_local_real_selection
+  pool_catalog: configs/packet_pools/cifar100_fullclass_ipc10_seed0_dkp_v2.yaml
+  strict_packet_validation: false
+agents:
+  num_agents: 10
+  num_classes: 100
+  class_split:
+    agent_0:
+    - 93
+    - 67
+    - 6
+    - 64
+    - 96
+    - 83
+    - 98
+    - 42
+    - 25
+    - 15
+    agent_1:
+    - 77
+    - 9
+    - 71
+    - 97
+    - 34
+    - 75
+    - 82
+    - 23
+    - 59
+    - 45
+    agent_2:
+    - 73
+    - 12
+    - 8
+    - 4
+    - 79
+    - 86
+    - 17
+    - 65
+    - 47
+    - 50
+    agent_3:
+    - 30
+    - 5
+    - 13
+    - 31
+    - 88
+    - 11
+    - 58
+    - 85
+    - 32
+    - 40
+    agent_4:
+    - 16
+    - 27
+    - 35
+    - 36
+    - 92
+    - 90
+    - 78
+    - 76
+    - 68
+    - 46
+    agent_5:
+    - 53
+    - 70
+    - 80
+    - 61
+    - 18
+    - 91
+    - 57
+    - 95
+    - 54
+    - 55
+    agent_6:
+    - 28
+    - 52
+    - 84
+    - 89
+    - 49
+    - 87
+    - 37
+    - 48
+    - 33
+    - 43
+    agent_7:
+    - 7
+    - 62
+    - 99
+    - 29
+    - 69
+    - 51
+    - 1
+    - 60
+    - 63
+    - 2
+    agent_8:
+    - 66
+    - 22
+    - 81
+    - 26
+    - 14
+    - 39
+    - 44
+    - 20
+    - 38
+    - 94
+    agent_9:
+    - 10
+    - 41
+    - 74
+    - 19
+    - 21
+    - 0
+    - 72
+    - 56
+    - 3
+    - 24
+  model_split:
+    agent_0: convnet3w1
+    agent_1: convnet3w1
+    agent_2: convnet4w15
+    agent_3: convnet4w15
+    agent_4: alexnet
+    agent_5: alexnet
+    agent_6: resnet10_standard
+    agent_7: resnet10_standard
+    agent_8: resnet18_standard
+    agent_9: resnet18_standard
+social_learning:
+  receiver:
+    epochs: 60
+    lr: 0.01
+    lambda_fr: 0.2
+    self_real_per_class: 0
+    scheduler: multistep
+    scheduler_gamma: 0.2
+    scheduler_milestones:
+    - 39
+    - 51
+    protocol: dkp_sl_v1
+    local_batch_size: 64
+    external_batch_size: 64
+    self_data_mode: real
+    augment: true
+    prototype_decoded_per_class: 10
+    lambda_sc: 0.1
+    supcon_temperature: 0.07
+    dkp_variant: ablation_fr1_kd0_sc1
+    loss_switches:
+      fr: true
+      kd: false
+      supcon: true
+    checkpoint_retention: final_only
+    local_ce_source: real_packet_mix
+    optimizer_steps: 3780
+    self_packet_batch_size: 64
+    scheduler_unit: optimizer_step
+    scheduler_step_milestones:
+    - 2457
+    - 3213
+    local_ce_real_fraction: 0.02
+    packet_raw_per_class: 10
+logits:
+  enabled: false
+  lambda_kd: 0.0
+  temperature: 2.0
+evaluation:
+  enabled: true
+  epochs: 1500
+  batch_size: 64
+  repeat: 1
+runtime:
+  seed: 3
+  workers: 3
+  device: cuda
+  gpu_id: 0
+expert_reuse:
+  source_run: cifar100_10agent10cls_dkp_cosine_experts_seed3_v1
+  require_checkpoint_sha_match: true
+scaling_protocol:
+  role: preregistered_independent_seed_scaling
+  source_selection_seed: 0
+  evaluation_seed: 3
+  agent_count: 10
+  classes_per_agent: 10
+  nested_from_five_macro_agents: true
+  fixed_method: r02_full
+  fixed_optimizer_steps: 3780
+  fixed_ipc: 10
+  test_metric_adaptation_allowed: false
+  all_receivers_required: true
+  method: heuristic
+  hard_labels_only: true
+  sender_logits: false
+  packet_raw_per_class: 10

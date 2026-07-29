@@ -26,14 +26,17 @@ def _empty_packet_like(source, images, labels):
     }
 
 
-def _load_self_real_training_data(args):
+def _load_self_real_training_data(args, per_class_limit=None):
     """加载 receiver 本地真实 expert 数据，用作 self replay 且不计通信量。"""
     from agent_data import ActiveClassDataset, get_num_classes, get_train_dataset
 
     dataset = get_train_dataset(args, normalize=False, augment=False)
     active_classes = [int(c) for c in getattr(args, "active_class_ids", [])]
     subset = ActiveClassDataset(dataset, active_classes, num_classes=get_num_classes(args))
-    per_class_limit = int(getattr(args, "self_real_per_class", 0) or 0)
+    if per_class_limit is None:
+        per_class_limit = int(getattr(args, "self_real_per_class", 0) or 0)
+    else:
+        per_class_limit = int(per_class_limit)
     per_class_seen = {class_id: 0 for class_id in active_classes}
     images = []
     labels = []
@@ -51,9 +54,14 @@ def _load_self_real_training_data(args):
     return _empty_packet_like("self_real", torch.stack(images), torch.tensor(labels, dtype=torch.long))
 
 
+def load_receiver_local_real_data(args):
+    """Public entry point for the DKP receiver's complete local-real stream."""
+    return _load_self_real_training_data(args, per_class_limit=0)
+
+
 def _decode_dsdm_images(args, packet):
     """复用 DSDM 原 decode_fn 解码 factorized synthetic data。"""
-    from test import decode_fn
+    from dsdm_decode import decode_fn
 
     images = packet["images"]
     labels = packet["labels"]
@@ -218,3 +226,66 @@ def consume_manifest_packets(args, manifest_rows, require_logits=False, require_
         "sender_agents": sender_agents,
         "packets": packets,
     }
+
+
+def consume_external_manifest_packets(args, manifest_rows, receiver_agent, require_logits=False):
+    """Consume only the other senders' packets for the DKP-SL external stream."""
+    receiver_agent = int(receiver_agent)
+    packets = []
+    sender_agent_chunks = []
+    for row in manifest_rows:
+        sender_agent = int(row["sender_agent"])
+        if sender_agent == receiver_agent:
+            continue
+        consumed = consume_packet_for_training(
+            args,
+            row["packet_path"],
+            require_sender_logits=require_logits,
+            require_generalist_logits=False,
+        )
+        consumed["sender_agent"] = sender_agent
+        packets.append(consumed)
+        sender_agent_chunks.append(
+            torch.full((consumed["num_images"],), sender_agent, dtype=torch.long)
+        )
+    if not packets:
+        raise ValueError(f"receiver {receiver_agent} has no external DKP packets")
+
+    result = {
+        "images": torch.cat([packet["images"] for packet in packets]),
+        "labels": torch.cat([packet["labels"] for packet in packets]),
+        "sender_agents": torch.cat(sender_agent_chunks),
+        "sender_logits": None,
+        "sender_logit_class_ids": None,
+        "packets": packets,
+    }
+    if require_logits:
+        result["sender_logits"] = torch.cat([packet["sender_logits"] for packet in packets])
+        result["sender_logit_class_ids"] = torch.cat(
+            [packet["sender_logit_class_ids"] for packet in packets]
+        )
+    return result
+
+
+def consume_receiver_manifest_packet(args, manifest_rows, receiver_agent):
+    """Load the receiver's own DKP without counting it as external communication."""
+    receiver_agent = int(receiver_agent)
+    matching_rows = [
+        row for row in manifest_rows if int(row["sender_agent"]) == receiver_agent
+    ]
+    if len(matching_rows) != 1:
+        raise ValueError(
+            f"receiver {receiver_agent} must have exactly one self DKP manifest row; "
+            f"found {len(matching_rows)}"
+        )
+    row = matching_rows[0]
+    consumed = consume_packet_for_training(
+        args,
+        row["packet_path"],
+        require_sender_logits=False,
+        require_generalist_logits=False,
+    )
+    consumed["sender_agent"] = receiver_agent
+    consumed["packet_path"] = str(Path(row["packet_path"]).resolve())
+    consumed["manifest_packet_sha256"] = str(row.get("packet_sha256", ""))
+    return consumed

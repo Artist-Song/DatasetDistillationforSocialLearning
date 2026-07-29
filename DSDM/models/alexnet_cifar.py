@@ -1,11 +1,13 @@
 import torch
 import torch.nn as nn
 
+from .cosine_classifier import build_classifier
+
 
 class AlexNetCIFAR(nn.Module):
     """Small AlexNet-style network for 32x32 CIFAR images."""
 
-    def __init__(self, num_classes=100, nch=3):
+    def __init__(self, num_classes=100, nch=3, classifier_type='linear', cosine_scale_init=10.0):
         super().__init__()
         self.features = nn.Sequential(
             nn.Conv2d(nch, 64, kernel_size=3, stride=1, padding=1),
@@ -35,7 +37,12 @@ class AlexNetCIFAR(nn.Module):
             nn.Dropout(0.2),
             nn.Linear(1024, 512),
             nn.ReLU(inplace=True),
-            nn.Linear(512, num_classes),
+            build_classifier(
+                512,
+                num_classes,
+                classifier_type=classifier_type,
+                scale_init=cosine_scale_init,
+            ),
         )
 
     def forward(self, x):
@@ -73,5 +80,10 @@ class AlexNetCIFAR(nn.Module):
         return features[idx_from:idx_to + 1], x
 
 
-def alexnet_cifar(num_classes=100, nch=3):
-    return AlexNetCIFAR(num_classes=num_classes, nch=nch)
+def alexnet_cifar(num_classes=100, nch=3, classifier_type='linear', cosine_scale_init=10.0):
+    return AlexNetCIFAR(
+        num_classes=num_classes,
+        nch=nch,
+        classifier_type=classifier_type,
+        cosine_scale_init=cosine_scale_init,
+    )

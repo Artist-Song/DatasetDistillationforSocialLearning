@@ -153,6 +153,9 @@ def save_best_synthetic(args, synset, best_acc, iteration):
         "ipc": args.ipc,
         "pcbn_enabled": bool(getattr(args, "pcbn_enabled", False)),
         "pcbn_weight": float(getattr(args, "pcbn_weight", 0.0)),
+        "pcbn_layers": getattr(args, "pcbn_layers", "all"),
+        "pcbn_normalize_layers": bool(getattr(args, "pcbn_normalize_layers", True)),
+        "pcbn_hook_count": int(getattr(args, "pcbn_hook_count", 0)),
     }
     atomic_torch_save(payload, path)
     history_path = get_run_dir(args) / "synthetic" / "history" / f"best_iter_{int(iteration):05d}.pt"
@@ -165,6 +168,9 @@ def save_best_synthetic(args, synset, best_acc, iteration):
             "history_snapshot": str(history_path),
             "pcbn_enabled": payload["pcbn_enabled"],
             "pcbn_weight": payload["pcbn_weight"],
+            "pcbn_layers": payload["pcbn_layers"],
+            "pcbn_normalize_layers": payload["pcbn_normalize_layers"],
+            "pcbn_hook_count": payload["pcbn_hook_count"],
         },
         get_run_dir(args) / "synthetic" / "best_manifest.json",
     )

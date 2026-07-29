@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import importlib.util
 import json
 import random
@@ -37,6 +38,8 @@ sys.path.insert(0, str(DSDM_ROOT))
 from train import define_model  # noqa: E402
 from agent_data import build_agent_args, get_agent_dir  # noqa: E402
 from config_adapter import load_config  # noqa: E402
+from baseline_adapters.communication_accounting import desa_communication_accounting  # noqa: E402
+from packet_integrity import file_sha256  # noqa: E402
 
 
 MEAN = (0.5070751592371323, 0.48654887331495095, 0.4409178433670343)
@@ -218,7 +221,25 @@ def class_indices(targets, classes: list[int]) -> list[int]:
     return [index for index, target in enumerate(targets) if int(target) in allowed]
 
 
-def load_models(config_path: str, cfg_dict: dict, device: torch.device) -> tuple[dict[int, ProjectModel], dict[int, list[int]], dict[int, str]]:
+def validate_agent_protocol(classes: dict[int, list[int]], model_split: dict[int, str]) -> None:
+    if sorted(classes) != list(range(len(classes))):
+        raise ValueError("DeSA agent IDs must be contiguous from zero")
+    if set(classes) != set(model_split):
+        raise ValueError("DeSA class/model agent IDs differ")
+    if len(classes) not in {5, 10, 20}:
+        raise ValueError(f"current DeSA protocol supports 5/10/20 agents, got {len(classes)}")
+    flattened = [class_id for values in classes.values() for class_id in values]
+    if len(flattened) != 100 or sorted(flattened) != list(range(100)):
+        raise ValueError("DeSA classes must be a disjoint global-label cover of 0-99")
+    if len({len(values) for values in classes.values()}) != 1:
+        raise ValueError("DeSA scaling protocol requires balanced class counts")
+
+
+def load_models(
+    config_path: str,
+    cfg_dict: dict,
+    device: torch.device,
+) -> tuple[dict[int, ProjectModel], dict[int, list[int]], dict[int, str], dict[int, str]]:
     class_split = {
         int(key.replace("agent_", "")): [int(value) for value in values]
         for key, values in cfg_dict["agents"]["class_split"].items()
@@ -227,13 +248,16 @@ def load_models(config_path: str, cfg_dict: dict, device: torch.device) -> tuple
         int(key.replace("agent_", "")): str(value)
         for key, value in cfg_dict["agents"]["model_split"].items()
     }
+    validate_agent_protocol(class_split, model_split)
     models = {}
+    checkpoint_shas = {}
     for agent in sorted(class_split):
         args = build_agent_args(cfg_dict, config_path, agent)
         model = define_model(args, 100)
         checkpoint = get_agent_dir(args, agent) / "checkpoints/expert_model.pt"
         if not checkpoint.exists():
             raise FileNotFoundError(f"missing project expert checkpoint: {checkpoint}")
+        checkpoint_shas[agent] = file_sha256(checkpoint)
         model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
         wrapped = ProjectModel(model, args.idx_from, model_split[agent]).to(device)
         models[agent] = wrapped
@@ -241,7 +265,7 @@ def load_models(config_path: str, cfg_dict: dict, device: torch.device) -> tuple
             f"[model/a{agent}] {model_split[agent]} family={args.net_type} depth={args.depth} "
             f"width={args.width} feature_idx={args.idx_from} checkpoint={checkpoint}"
         )
-    return models, class_split, model_split
+    return models, class_split, model_split, checkpoint_shas
 
 
 def materialize(dataset: Dataset, indices: list[int], device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
@@ -539,9 +563,29 @@ def run(cfg: Settings) -> Path:
 
     log(f"[start] DeSA-CIL config={config_path} ipc={cfg.ipc} seed={cfg.seed} device={device}")
     train, train_static, test = build_datasets(project_cfg["dataset"].get("data_dir", "./data"))
-    models, classes, model_names = load_models(config_path, project_cfg, device)
+    models, classes, model_names, checkpoint_shas = load_models(config_path, project_cfg, device)
     train_indices = {agent: class_indices(train.targets, agent_classes) for agent, agent_classes in classes.items()}
     anchors = prepare_anchors(cfg, train_static, train_indices, classes, run_root, device)
+    protocol = {
+        "method": "DeSA-CIL",
+        "adaptation": "class-disjoint owner-aware anchors and iterative owner logits",
+        "project_config": config_path,
+        "project_config_sha256": hashlib.sha256(Path(config_path).read_bytes()).hexdigest(),
+        "project_run_name": run_name,
+        "seed": cfg.seed,
+        "agent_count": len(classes),
+        "ipc": cfg.ipc,
+        "rounds": 1 if cfg.smoke else cfg.rounds,
+        "class_split": {str(agent): values for agent, values in classes.items()},
+        "model_split": {str(agent): value for agent, value in model_names.items()},
+        "expert_checkpoint_sha256": {
+            str(agent): value for agent, value in checkpoint_shas.items()
+        },
+        "raw_image_budget_note": "synthetic anchors plus iterative owner-logit communication",
+    }
+    (run_root / "resolved_protocol.json").write_text(
+        json.dumps(protocol, indent=2, sort_keys=True), encoding="utf-8"
+    )
 
     all_test = list(range(len(test)))
     before = {
@@ -559,6 +603,8 @@ def run(cfg: Settings) -> Path:
     checkpoint = run_root / "checkpoint.pt"
     if cfg.resume and checkpoint.exists():
         state = torch.load(checkpoint, map_location=device, weights_only=False)
+        if state.get("settings") != asdict(cfg):
+            raise ValueError("DeSA resume checkpoint settings differ from requested settings")
         for agent in models:
             models[agent].load_state_dict(state["models"][agent])
             optimizers[agent].load_state_dict(state["optimizers"][agent])
@@ -595,10 +641,11 @@ def run(cfg: Settings) -> Path:
         log(f"[round={round_index + 1}] seconds={time.time() - started:.1f}")
 
     rows = []
-    total_logit_bytes = cfg.rounds * (len(models) - 1) * sum(
-        (len(images) * 25 * 4) for images, _ in anchors.values()
+    communication = desa_communication_accounting(
+        {owner: len(images) for owner, (images, _labels) in anchors.items()},
+        {owner: len(owner_classes) for owner, owner_classes in classes.items()},
+        rounds,
     )
-    per_receiver_logit_bytes = cfg.rounds * 3 * 25 * cfg.ipc * 25 * 4
     for receiver, model in models.items():
         own = class_indices(test.targets, classes[receiver])
         novel = [index for index in all_test if int(test.targets[index]) not in set(classes[receiver])]
@@ -617,21 +664,34 @@ def run(cfg: Settings) -> Path:
                 "seed": cfg.seed,
                 "receiver": receiver,
                 "backbone": model_names[receiver],
+                "expert_checkpoint_sha256": checkpoint_shas[receiver],
                 "acc_global": global_acc,
                 "acc_new": new_acc,
                 "acc_expert": expert_acc,
                 "forgetting": before[receiver] - expert_acc,
                 "expert_before": before[receiver],
-                "external_comm_images": 3 * 25 * cfg.ipc,
-                "iterative_owner_logit_bytes_per_receiver": per_receiver_logit_bytes,
-                "iterative_owner_logit_bytes_all_agents": total_logit_bytes,
+                "external_comm_images": communication["external_images_per_receiver"][receiver],
+                "iterative_owner_logit_bytes_per_receiver": communication[
+                    "iterative_owner_logit_bytes_per_receiver"
+                ][receiver],
+                "iterative_owner_logit_bytes_all_agents": communication[
+                    "iterative_owner_logit_bytes_all_agents"
+                ],
             }
         )
         log(f"[result/a{receiver}] global={global_acc:.2f} new={new_acc:.2f} expert={expert_acc:.2f} forgetting={before[receiver] - expert_acc:.2f}")
     average = dict(rows[0])
     average["receiver"] = "avg"
     average["backbone"] = "heterogeneous-average"
-    for key in ["acc_global", "acc_new", "acc_expert", "forgetting", "expert_before"]:
+    for key in [
+        "acc_global",
+        "acc_new",
+        "acc_expert",
+        "forgetting",
+        "expert_before",
+        "external_comm_images",
+        "iterative_owner_logit_bytes_per_receiver",
+    ]:
         average[key] = sum(float(row[key]) for row in rows) / len(rows)
     rows.append(average)
     output = run_root / "social_results.csv"
@@ -643,7 +703,12 @@ def run(cfg: Settings) -> Path:
 def main() -> None:
     args = parse_args()
     project_cfg = load_config(args.config)
-    seed = int(project_cfg.get("runtime", {}).get("seed", 0) if args.seed is None else args.seed)
+    configured_seed = int(project_cfg.get("runtime", {}).get("seed", 0))
+    if args.seed is not None and int(args.seed) != configured_seed:
+        raise ValueError(
+            f"DeSA --seed={args.seed} differs from config runtime.seed={configured_seed}"
+        )
+    seed = configured_seed
     cfg = Settings(
         config=args.config,
         ipc=args.ipc,

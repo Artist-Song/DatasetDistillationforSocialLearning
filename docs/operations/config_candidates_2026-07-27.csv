@@ -1,0 +1,3 @@
+run_name,config
+cifar100_teacher_quality_conv3_seed0_smoke_v2,configs/teacher_quality_smoke/train_conv3_seed0.yaml
+cifar100_tq_conv3_guidee0002_seed0_ipc10_smoke_v2,configs/teacher_quality_smoke/packet_conv3_guidee0002_seed0_ipc10.yaml

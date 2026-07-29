@@ -36,7 +36,7 @@ from social_output_manager import (
     save_social_config,
     write_packet_manifest,
 )
-from social_trainer import SocialTrainer
+from social_trainer import SocialTrainer, resolve_dkp_loss_switches
 
 
 ROOT = Path(__file__).resolve().parent
@@ -271,7 +271,13 @@ def _stage_attach_logits(cfg, config_path, base_args, cli):
     progress = ProgressTimer(len(agent_ids), name="attach_logits")
     for index, agent_id in enumerate(agent_ids, start=1):
         agent_args = build_agent_args(cfg, config_path, agent_id)
-        attach_sender_logits_to_packet(agent_args, agent_id, cli.packet_method)
+        attach_sender_logits_to_packet(
+            agent_args,
+            agent_id,
+            cli.packet_method,
+            resume=cli.resume,
+            overwrite=cli.overwrite,
+        )
         progress.update(index, extra=f"agent={agent_id}")
     _stage_done("attach_logits")
 
@@ -320,6 +326,91 @@ def _stage_build_communication(base_args, cli):
     _stage_done("build_communication")
 
 
+def build_receiver_args(cfg, config_path, receiver_id, packet_method="dsdm", init_mode="expert"):
+    """Resolve exactly the receiver arguments used by training and preflight."""
+    receiver_args = build_agent_args(cfg, config_path, receiver_id)
+    receiver_cfg = cfg.get("social_learning", {}).get("receiver", {})
+    receiver_args.receiver_epochs = receiver_cfg.get("epochs", receiver_args.epochs)
+    receiver_args.receiver_lr = receiver_cfg.get("lr", receiver_args.lr)
+    receiver_args.lambda_fr = receiver_cfg.get("lambda_fr", 0.05)
+    receiver_args.self_data_mode = str(receiver_cfg.get("self_data_mode", "packet"))
+    receiver_args.self_real_per_class = int(receiver_cfg.get("self_real_per_class", 0) or 0)
+    receiver_args.self_class_weight = float(receiver_cfg.get("self_class_weight", 1.0))
+    receiver_args.receiver_scheduler = str(receiver_cfg.get("scheduler", "none"))
+    receiver_args.receiver_scheduler_milestones = receiver_cfg.get("scheduler_milestones", [])
+    receiver_args.receiver_scheduler_gamma = float(receiver_cfg.get("scheduler_gamma", 0.2))
+    receiver_args.receiver_augment = bool(receiver_cfg.get("augment", False))
+    receiver_args.freeze_bn_stats = bool(receiver_cfg.get("freeze_bn_stats", False))
+    receiver_args.lambda_schedule = str(receiver_cfg.get("lambda_schedule", "none"))
+    receiver_args.lambda_schedule_switch = float(receiver_cfg.get("lambda_schedule_switch", 0.7))
+    receiver_args.lambda_fr_late_multiplier = float(receiver_cfg.get("lambda_fr_late_multiplier", 1.5))
+    receiver_args.lambda_kd_late_multiplier = float(receiver_cfg.get("lambda_kd_late_multiplier", 0.7))
+    logits_cfg = cfg.get("logits", {})
+    communication_cfg = cfg.get("communication", {})
+    receiver_args.receiver_protocol = str(
+        receiver_cfg.get("protocol", communication_cfg.get("receiver_protocol", "legacy"))
+    )
+    receiver_args.dkp_variant = str(
+        receiver_cfg.get("dkp_variant", communication_cfg.get("dkp_variant", "legacy"))
+    )
+    receiver_args.receiver_local_batch_size = int(receiver_cfg.get("local_batch_size", 64))
+    receiver_args.receiver_external_batch_size = int(receiver_cfg.get("external_batch_size", 64))
+    receiver_args.lambda_sc = float(receiver_cfg.get("lambda_sc", 0.0))
+    receiver_args.supcon_temperature = float(receiver_cfg.get("supcon_temperature", 0.07))
+    receiver_args.prototype_decoded_per_class = int(receiver_cfg.get("prototype_decoded_per_class", 40))
+    if "checkpoint_retention" in receiver_cfg:
+        from config_adapter import normalize_receiver_checkpoint_retention
+
+        receiver_args.receiver_checkpoint_retention = normalize_receiver_checkpoint_retention(
+            receiver_cfg["checkpoint_retention"]
+        )
+    receiver_args.communication_mode = communication_cfg.get("mode", "direct")
+    receiver_args.use_logits = bool(
+        communication_cfg.get("use_sender_logits", logits_cfg.get("enabled", False))
+    )
+    if packet_method == "fast":
+        receiver_args.use_logits = False
+    dkp_loss_switches = resolve_dkp_loss_switches(
+        receiver_args.dkp_variant,
+        getattr(receiver_args, "dkp_loss_switches", None),
+    ) if receiver_args.receiver_protocol == "dkp_sl_v1" else None
+    if bool(getattr(receiver_args, "strict_packet_validation", False)):
+        if receiver_args.receiver_protocol != "dkp_sl_v1":
+            raise ValueError("Strict DKP receiver requires receiver protocol dkp_sl_v1")
+        if receiver_args.use_logits is not dkp_loss_switches["kd"]:
+            raise ValueError(
+                "communication.use_sender_logits must exactly match the DKP KD switch"
+            )
+    if dkp_loss_switches is not None:
+        configured_weights = {
+            "fr": float(receiver_args.lambda_fr),
+            "kd": float(logits_cfg.get("lambda_kd", 0.0)),
+            "supcon": float(receiver_args.lambda_sc),
+        }
+        for loss_name, enabled in dkp_loss_switches.items():
+            value = configured_weights[loss_name]
+            if enabled and value <= 0.0:
+                raise ValueError(f"enabled DKP loss {loss_name} requires a positive weight")
+            if not enabled and value != 0.0:
+                raise ValueError(f"disabled DKP loss {loss_name} requires a zero weight")
+    receiver_args.use_generalist_logits = bool(communication_cfg.get("use_generalist_logits", False))
+    receiver_args.kd_mix_beta = float(communication_cfg.get("kd_mix_beta", 0.5))
+    receiver_args.lambda_kd = (
+        float(logits_cfg.get("lambda_kd", 0.5))
+        if (receiver_args.use_logits or receiver_args.use_generalist_logits)
+        else 0.0
+    )
+    receiver_args.kd_temperature = float(logits_cfg.get("temperature", 2.0))
+    receiver_args.packet_method = packet_method
+    receiver_args.init_mode = init_mode
+    receiver_args.use_fr = init_mode == "expert"
+    if dkp_loss_switches is not None:
+        receiver_args.use_fr = dkp_loss_switches["fr"]
+    if init_mode == "scratch":
+        receiver_args.lambda_fr = 0.0
+    return receiver_args
+
+
 def _stage_train_receivers(base_args, cli):
     """读取 packet_hub 并训练每个 receiver。"""
     cfg = load_config(cli.config)
@@ -328,38 +419,13 @@ def _stage_train_receivers(base_args, cli):
     _stage_banner("train_receivers", f"receivers={receiver_ids}")
     progress = ProgressTimer(len(receiver_ids), name="train_receivers")
     for index, receiver_id in enumerate(receiver_ids, start=1):
-        receiver_args = build_agent_args(cfg, cli.config, receiver_id)
-        receiver_cfg = cfg.get("social_learning", {}).get("receiver", {})
-        receiver_args.receiver_epochs = receiver_cfg.get("epochs", receiver_args.epochs)
-        receiver_args.receiver_lr = receiver_cfg.get("lr", receiver_args.lr)
-        receiver_args.lambda_fr = receiver_cfg.get("lambda_fr", 0.05)
-        receiver_args.self_data_mode = str(receiver_cfg.get("self_data_mode", "packet"))
-        receiver_args.self_real_per_class = int(receiver_cfg.get("self_real_per_class", 0) or 0)
-        receiver_args.self_class_weight = float(receiver_cfg.get("self_class_weight", 1.0))
-        receiver_args.receiver_scheduler = str(receiver_cfg.get("scheduler", "none"))
-        receiver_args.receiver_scheduler_milestones = receiver_cfg.get("scheduler_milestones", [])
-        receiver_args.receiver_scheduler_gamma = float(receiver_cfg.get("scheduler_gamma", 0.2))
-        receiver_args.receiver_augment = bool(receiver_cfg.get("augment", False))
-        receiver_args.freeze_bn_stats = bool(receiver_cfg.get("freeze_bn_stats", False))
-        receiver_args.lambda_schedule = str(receiver_cfg.get("lambda_schedule", "none"))
-        receiver_args.lambda_schedule_switch = float(receiver_cfg.get("lambda_schedule_switch", 0.7))
-        receiver_args.lambda_fr_late_multiplier = float(receiver_cfg.get("lambda_fr_late_multiplier", 1.5))
-        receiver_args.lambda_kd_late_multiplier = float(receiver_cfg.get("lambda_kd_late_multiplier", 0.7))
-        logits_cfg = cfg.get("logits", {})
-        communication_cfg = cfg.get("communication", {})
-        receiver_args.communication_mode = communication_cfg.get("mode", "direct")
-        receiver_args.use_logits = bool(communication_cfg.get("use_sender_logits", logits_cfg.get("enabled", False)))
-        if cli.packet_method == "fast":
-            receiver_args.use_logits = False
-        receiver_args.use_generalist_logits = bool(communication_cfg.get("use_generalist_logits", False))
-        receiver_args.kd_mix_beta = float(communication_cfg.get("kd_mix_beta", 0.5))
-        receiver_args.lambda_kd = float(logits_cfg.get("lambda_kd", 0.5)) if (receiver_args.use_logits or receiver_args.use_generalist_logits) else 0.0
-        receiver_args.kd_temperature = float(logits_cfg.get("temperature", 2.0))
-        receiver_args.packet_method = cli.packet_method
-        receiver_args.init_mode = cli.init_mode
-        receiver_args.use_fr = cli.init_mode == "expert"
-        if cli.init_mode == "scratch":
-            receiver_args.lambda_fr = 0.0
+        receiver_args = build_receiver_args(
+            cfg,
+            cli.config,
+            receiver_id,
+            packet_method=cli.packet_method,
+            init_mode=cli.init_mode,
+        )
         print(
             f"[train_receivers] receiver={receiver_id} classes={receiver_args.active_class_ids} "
             f"self_data_mode={receiver_args.self_data_mode} self_real_per_class={receiver_args.self_real_per_class}"

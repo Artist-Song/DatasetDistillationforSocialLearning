@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import random
@@ -16,6 +17,15 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.data import DataLoader, TensorDataset
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from agent_data import get_agent_class_split  # noqa: E402
+from baseline_adapters.prepare_fedre_reproduction import project_dataset_name  # noqa: E402
+from config_adapter import load_config  # noqa: E402
 
 
 OFFICIAL_MODELS = [
@@ -49,8 +59,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run the official FedRE implementation and add read-only social-learning evaluation."
     )
-    parser.add_argument("--dataset", required=True)
-    parser.add_argument("--num-clients", required=True, type=int, choices=[4, 10])
+    parser.add_argument("--dataset", default=None)
+    parser.add_argument("--num-clients", type=int, choices=[4, 5, 10, 20], default=None)
+    parser.add_argument(
+        "--project-config",
+        default=None,
+        help="Current project config supplying the 5/10/20-agent class split.",
+    )
     parser.add_argument("--seed", required=True, type=int)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--fedre-system", default="external_baselines/repos/FedRE/HtFLlib/system")
@@ -69,6 +84,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     cli = parse_args()
+    project_cfg = _resolve_protocol(cli)
     warnings.simplefilter("ignore")
     output_dir = Path(cli.output_dir).resolve()
     if output_dir.exists() and any(output_dir.iterdir()):
@@ -85,7 +101,7 @@ def main() -> None:
 
     _set_seed(cli.seed)
     args = _build_official_args(cli, output_dir / "official_model_store")
-    provenance = _provenance(cli, args, fedre_system)
+    provenance = _provenance(cli, args, fedre_system, project_cfg)
     _atomic_json(output_dir / "resolved_protocol.json", provenance)
 
     server = FedRE(args, cli.seed)
@@ -143,8 +159,51 @@ def main() -> None:
     print(json.dumps(summary, indent=2), flush=True)
 
 
+def fedre_model_expressions(num_clients: int) -> list[str]:
+    if int(num_clients) not in {4, 5, 10, 20}:
+        raise ValueError(f"unsupported FedRE client count: {num_clients}")
+    return [OFFICIAL_MODELS[index % len(OFFICIAL_MODELS)] for index in range(int(num_clients))]
+
+
+def fedre_model_names(num_clients: int) -> list[str]:
+    if int(num_clients) not in {4, 5, 10, 20}:
+        raise ValueError(f"unsupported FedRE client count: {num_clients}")
+    return [MODEL_NAMES[index % len(MODEL_NAMES)] for index in range(int(num_clients))]
+
+
+def _resolve_protocol(cli: argparse.Namespace) -> dict | None:
+    if cli.project_config is None:
+        if cli.dataset is None or cli.num_clients is None:
+            raise ValueError("legacy FedRE runs require --dataset and --num-clients")
+        return None
+
+    config_path = Path(cli.project_config).resolve()
+    project_cfg = load_config(config_path)
+    class_split = get_agent_class_split(project_cfg)
+    inferred_clients = len(class_split)
+    if inferred_clients not in {5, 10, 20}:
+        raise ValueError(f"project FedRE supports 5/10/20 agents, got {inferred_clients}")
+    configured_seed = int(project_cfg.get("runtime", {}).get("seed", cli.seed))
+    if configured_seed != int(cli.seed):
+        raise ValueError(
+            f"FedRE --seed={cli.seed} differs from config runtime.seed={configured_seed}"
+        )
+    inferred_dataset = project_dataset_name(project_cfg)
+    if cli.dataset is not None and cli.dataset != inferred_dataset:
+        raise ValueError(f"FedRE --dataset={cli.dataset} differs from inferred {inferred_dataset}")
+    if cli.num_clients is not None and int(cli.num_clients) != inferred_clients:
+        raise ValueError(
+            f"FedRE --num-clients={cli.num_clients} differs from config agents={inferred_clients}"
+        )
+    cli.dataset = inferred_dataset
+    cli.num_clients = inferred_clients
+    cli.project_config = str(config_path)
+    return project_cfg
+
+
 def _build_official_args(cli: argparse.Namespace, model_store: Path) -> SimpleNamespace:
-    models = OFFICIAL_MODELS[: cli.num_clients]
+    models = fedre_model_expressions(cli.num_clients)
+    model_names = fedre_model_names(cli.num_clients)
     # Table 13 reports a homogeneous 512xC classifier broadcast for every model.
     # BaseHeadSplit exposes args.heads specifically for this configuration.
     heads = ["nn.Linear(args.feature_dim, args.num_classes)" for _ in models]
@@ -176,6 +235,7 @@ def _build_official_args(cli: argparse.Namespace, model_store: Path) -> SimpleNa
         learning_rate_decay_gamma=0.99,
         models=models,
         heads=heads,
+        resolved_model_names=model_names,
     )
 
 
@@ -199,7 +259,7 @@ def _evaluate_local_clients(server) -> list[dict]:
             {
                 "round": server.args.global_rounds,
                 "client_id": client.id,
-                "model": MODEL_NAMES[client.id],
+                "model": server.args.resolved_model_names[client.id],
                 "correct": int(correct),
                 "total": int(total),
                 "accuracy": 100.0 * correct / max(total, 1),
@@ -264,8 +324,8 @@ def _evaluate_union_test(
         rows.append(
             {
                 "client_id": client.id,
-                "model": MODEL_NAMES[client.id],
-                "expert_classes": f"{min(expert_classes)}-{max(expert_classes)}",
+                "model": server.args.resolved_model_names[client.id],
+                "expert_classes": ",".join(str(value) for value in sorted(expert_classes)),
                 "acc_global": _percent(*counts["global"]),
                 "acc_expert": _percent(*counts["expert"]),
                 "acc_new": _percent(*counts["new"]),
@@ -309,16 +369,78 @@ def _build_summary(
         "client_population_std_expert": float(np.std([row["acc_expert"] for row in global_rows])),
         "client_population_std_new": float(np.std([row["acc_new"] for row in global_rows])),
         "forgetting": None,
+        "communication": provenance["communication"],
         "provenance": provenance,
     }
 
 
-def _provenance(cli: argparse.Namespace, args: SimpleNamespace, fedre_system: Path) -> dict:
+def fedre_communication_accounting(
+    num_clients: int,
+    rounds: int,
+    feature_dim: int,
+    num_classes: int,
+    class_counts: list[int],
+    *,
+    element_bytes: int = 4,
+    label_bytes: int = 8,
+) -> dict:
+    if len(class_counts) != int(num_clients) or sum(class_counts) != int(num_classes):
+        raise ValueError("FedRE class counts must cover all global classes exactly once")
+    updates = int(rounds) + 1
+    head_elements = int(feature_dim) * int(num_classes) + int(num_classes)
+    head_bytes = head_elements * int(element_bytes)
+    representation_bytes = updates * int(num_clients) * int(feature_dim) * int(element_bytes)
+    mixture_weight_bytes = updates * sum(class_counts) * int(element_bytes)
+    mixture_label_bytes = updates * sum(class_counts) * int(label_bytes)
+    head_broadcast_bytes = updates * int(num_clients) * head_bytes
+    return {
+        "official_loop_updates": updates,
+        "shared_head_bytes_per_broadcast": head_bytes,
+        "shared_head_broadcast_bytes_all_clients": head_broadcast_bytes,
+        "entangled_representation_bytes_all_clients": representation_bytes,
+        "mixture_weight_bytes_all_clients": mixture_weight_bytes,
+        "mixture_label_bytes_all_clients": mixture_label_bytes,
+        "total_logical_bytes": (
+            head_broadcast_bytes
+            + representation_bytes
+            + mixture_weight_bytes
+            + mixture_label_bytes
+        ),
+        "raw_image_communication": 0,
+        "note": "Logical tensor payload; transport/serialization overhead is excluded.",
+    }
+
+
+def _provenance(
+    cli: argparse.Namespace,
+    args: SimpleNamespace,
+    fedre_system: Path,
+    project_cfg: dict | None,
+) -> dict:
     repo = fedre_system.parents[1]
     commit = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
     diff = subprocess.check_output(
         ["git", "-C", str(repo), "diff", "--", "HtFLlib/system/flcore/servers/serverre.py"],
         text=True,
+    )
+    dataset_root = fedre_system.parent / "dataset" / cli.dataset
+    manifest_path = dataset_root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    class_counts = [
+        len(manifest["agents"][str(client_id)]["classes"])
+        for client_id in range(cli.num_clients)
+    ]
+    communication = fedre_communication_accounting(
+        cli.num_clients,
+        cli.rounds,
+        cli.feature_dim,
+        100,
+        class_counts,
+    )
+    project_config_sha = (
+        hashlib.sha256(Path(cli.project_config).read_bytes()).hexdigest()
+        if cli.project_config
+        else None
     )
     return {
         "method": "FedRE",
@@ -327,10 +449,15 @@ def _provenance(cli: argparse.Namespace, args: SimpleNamespace, fedre_system: Pa
         "fedre_server_patch_present": bool(diff.strip()),
         "fedre_server_patch_sha256": _text_sha256(diff),
         "dataset": cli.dataset,
+        "dataset_manifest": str(manifest_path),
+        "dataset_manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
         "num_clients": cli.num_clients,
         "seed": cli.seed,
         "paper_round": cli.rounds,
-        "official_loop_note": "Official range(global_rounds + 1); paper metrics snapshot at evaluation index 100",
+        "official_loop_note": (
+            "Official range(global_rounds + 1); paper metrics snapshot at "
+            f"evaluation index {cli.rounds}"
+        ),
         "local_epochs": cli.local_epochs,
         "local_batch_size": cli.local_batch_size,
         "local_lr": cli.local_lr,
@@ -341,10 +468,23 @@ def _provenance(cli: argparse.Namespace, args: SimpleNamespace, fedre_system: Pa
         "representation_mapping": "official AdaptiveAvgPool1d(512)",
         "representation_entanglement": "official RAP",
         "classifier": "official BaseHeadSplit args.heads = Linear(512, 100) for every client",
-        "models": MODEL_NAMES[: cli.num_clients],
+        "models": args.resolved_model_names,
         "model_expressions": args.models,
+        "model_assignment_rule": (
+            "first five official HtM10 models"
+            if cli.num_clients == 5
+            else "official HtM10 models"
+            if cli.num_clients == 10
+            else "official HtM10 list repeated twice"
+            if cli.num_clients == 20
+            else "legacy prefix of official HtM10 models"
+        ),
+        "project_config": cli.project_config,
+        "project_config_sha256": project_config_sha,
+        "project_run_name": project_cfg["project"]["run_name"] if project_cfg else None,
         "training_initialization": "official random initialization; no local expert pretraining",
         "extra_evaluation": "read-only union-test evaluation of paper-round checkpoint snapshot",
+        "communication": communication,
     }
 
 

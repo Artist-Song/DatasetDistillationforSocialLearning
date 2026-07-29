@@ -1,6 +1,8 @@
 from collections import defaultdict
+import hashlib
 import importlib
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 
@@ -134,27 +136,52 @@ def _validate_fast_positions(positions, num_candidates, ipc, class_id):
     return positions
 
 
-def _fast_cache_path(args, class_id):
+def _fast_repo_provenance(args):
+    repo_path = Path(getattr(args, "fast_repo_path", "external_baselines/repos/FAST")).resolve()
+    expected_commit = str(getattr(args, "fast_commit", FAST_OFFICIAL_COMMIT))
+    actual_commit = subprocess.check_output(
+        ["git", "-C", str(repo_path), "rev-parse", "HEAD"], text=True
+    ).strip()
+    if actual_commit != expected_commit:
+        raise ValueError(f"FAST HEAD={actual_commit} differs from configured commit={expected_commit}")
+    tracked_diff = subprocess.check_output(
+        ["git", "-C", str(repo_path), "diff", "--binary", "--no-ext-diff"], text=True
+    )
+    patch_sha256 = hashlib.sha256(tracked_diff.encode("utf-8")).hexdigest()
+    return {
+        "repo_path": str(repo_path),
+        "official_commit": actual_commit,
+        "tracked_patch_present": bool(tracked_diff),
+        "tracked_patch_sha256": patch_sha256,
+    }
+
+
+def _fast_cache_path(args, class_id, provenance):
     cache_root = Path(
         getattr(args, "fast_cache_root", "external_baselines/outputs/fast_cache")
     )
-    commit = str(getattr(args, "fast_commit", FAST_OFFICIAL_COMMIT))[:12]
+    commit = provenance["official_commit"][:12]
+    patch = provenance["tracked_patch_sha256"][:12] if provenance["tracked_patch_present"] else "clean"
     return (
         cache_root
-        / f"{args.dataset}_pixels_{commit}"
+        / f"{args.dataset}_pixels_{commit}_{patch}"
         / f"ipc{int(args.ipc)}"
         / f"class_{int(class_id):03d}.npz"
     )
 
 
-def _select_fast_class_positions(args, class_id, class_images):
+def _select_fast_class_positions(args, class_id, class_images, provenance):
     """运行 FAST 官方 per-class/pixels/minmax 选择并缓存类内索引。"""
     num_candidates = int(class_images.shape[0])
-    cache_path = _fast_cache_path(args, class_id)
+    cache_path = _fast_cache_path(args, class_id, provenance)
     if cache_path.exists():
         with np.load(cache_path, allow_pickle=False) as cached:
             if int(cached["num_candidates"]) != num_candidates:
                 raise ValueError(f"FAST cache 样本数不匹配: {cache_path}")
+            if str(cached["fast_commit"].item()) != provenance["official_commit"]:
+                raise ValueError(f"FAST cache commit 不匹配: {cache_path}")
+            if str(cached["tracked_patch_sha256"].item()) != provenance["tracked_patch_sha256"]:
+                raise ValueError(f"FAST cache patch SHA 不匹配: {cache_path}")
             positions = cached["selected_positions"]
         return _validate_fast_positions(positions, num_candidates, args.ipc, class_id), cache_path, True
 
@@ -189,6 +216,7 @@ def _select_fast_class_positions(args, class_id, class_images):
         ipc=np.int64(args.ipc),
         algorithm_seed=np.int64(algorithm_seed),
         fast_commit=np.asarray(str(getattr(args, "fast_commit", FAST_OFFICIAL_COMMIT))),
+        tracked_patch_sha256=np.asarray(provenance["tracked_patch_sha256"]),
         x_source=np.asarray("pixels"),
     )
     return positions, cache_path, False
@@ -196,6 +224,7 @@ def _select_fast_class_positions(args, class_id, class_images):
 
 def build_fast_packet(args, train_set):
     """用 FAST 官方 pixels/per-class/minmax 模式选择真实图 packet。"""
+    provenance = _fast_repo_provenance(args)
     indices_by_class = _collect_indices_by_class(train_set)
     class_ids = sorted(indices_by_class.keys())
     selected = []
@@ -206,7 +235,9 @@ def build_fast_packet(args, train_set):
         if len(candidates) < int(args.ipc):
             raise ValueError(f"class {class_id} 只有 {len(candidates)} 张，无法选择 IPC={args.ipc}")
         class_images, _ = _stack_samples(train_set, candidates)
-        positions, cache_path, cache_hit = _select_fast_class_positions(args, class_id, class_images)
+        positions, cache_path, cache_hit = _select_fast_class_positions(
+            args, class_id, class_images, provenance
+        )
         selected.extend(candidates[int(position)] for position in positions)
         cache_paths.append(str(cache_path))
         cache_hits += int(cache_hit)
@@ -219,6 +250,9 @@ def build_fast_packet(args, train_set):
     meta = {
         "selector": "FAST",
         "official_commit": str(getattr(args, "fast_commit", FAST_OFFICIAL_COMMIT)),
+        "repo_path": provenance["repo_path"],
+        "tracked_patch_present": provenance["tracked_patch_present"],
+        "tracked_patch_sha256": provenance["tracked_patch_sha256"],
         "official_mode": "pixels/per_class/minmax",
         "algorithm_seed": int(getattr(args, "fast_seed", 0)),
         "selected_dataset_indices": dataset_indices,

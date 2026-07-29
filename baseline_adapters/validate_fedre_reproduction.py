@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
+import sys
 from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from agent_data import get_agent_class_split  # noqa: E402
+from config_adapter import load_config  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -15,6 +25,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--expected-paper-accuracy", type=float)
     parser.add_argument("--paper-accuracy-tolerance", type=float, default=10.0)
     parser.add_argument("--minimum-paper-accuracy", type=float)
+    parser.add_argument("--project-config", default=None)
     return parser.parse_args()
 
 
@@ -37,6 +48,45 @@ def main() -> None:
         "training was not delegated to official FedRE.train",
     )
     _require(protocol["fedre_commit"] == "9e2164343ee0d76be60afe46e2b986b9f77ef1cb", "unexpected FedRE commit")
+    _require(int(protocol["num_clients"]) == args.expected_clients, "protocol client count differs")
+    if args.expected_clients == 5:
+        _require(
+            protocol["model_assignment_rule"] == "first five official HtM10 models",
+            "unexpected 5-agent model assignment",
+        )
+    elif args.expected_clients == 10:
+        _require(
+            protocol["model_assignment_rule"] == "official HtM10 models",
+            "unexpected 10-agent model assignment",
+        )
+    elif args.expected_clients == 20:
+        _require(
+            protocol["model_assignment_rule"] == "official HtM10 list repeated twice",
+            "unexpected 20-agent model assignment",
+        )
+        _require(protocol["models"][:10] == protocol["models"][10:], "20-agent model list is not repeated")
+
+    communication = protocol.get("communication", {})
+    _require(int(communication.get("raw_image_communication", -1)) == 0, "FedRE must not report image-only communication")
+    _require(int(communication.get("official_loop_updates", -1)) == args.expected_round + 1, "FedRE communication rounds differ")
+    _require(int(communication.get("total_logical_bytes", 0)) > 0, "FedRE communication bytes are missing")
+    _require(summary.get("communication") == communication, "FedRE summary communication provenance differs")
+    if args.project_config:
+        config_path = Path(args.project_config).resolve()
+        config = load_config(config_path)
+        class_split = get_agent_class_split(config)
+        _require(len(class_split) == args.expected_clients, "FedRE project config client count differs")
+        _require(
+            protocol.get("project_config_sha256") == hashlib.sha256(config_path.read_bytes()).hexdigest(),
+            "FedRE project config SHA differs",
+        )
+        manifest_path = Path(protocol["dataset_manifest"])
+        manifest = _read_json(manifest_path)
+        manifest_split = {
+            int(client_id): [int(value) for value in info["classes"]]
+            for client_id, info in manifest["agents"].items()
+        }
+        _require(manifest_split == class_split, "FedRE exported class split differs from project config")
 
     paper_accuracy = float(summary["paper_local_accuracy"])
     official_accuracy = float(summary["official_recorded_local_accuracy"])

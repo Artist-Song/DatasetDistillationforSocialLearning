@@ -10,13 +10,14 @@ import torch
 from config_adapter import build_dsdm_args_from_config, load_config
 from agent_data import get_agent_class_split, get_num_classes
 from packet_consumer import consume_packet_for_training
+from packet_integrity import file_sha256, strict_packet_validation_enabled
 from social_output_manager import get_manifest_path, get_run_dir, read_packet_manifest
 
 
 ROOT = Path(__file__).resolve().parent
 DSDM_ROOT = ROOT / "DSDM"
 if str(DSDM_ROOT) not in sys.path:
-    sys.path.insert(0, str(DSDM_ROOT))
+    sys.path.append(str(DSDM_ROOT))
 
 
 def parse_cli():
@@ -103,6 +104,16 @@ def _build_warning(args, packet_method, summary):
     return warnings
 
 
+def _expected_full_real_sender_raw(args, sender_agent):
+    samples_per_class = (
+        500 if args.dataset == "cifar100" else 5000 if args.dataset == "cifar10" else None
+    )
+    if samples_per_class is None:
+        return None
+    class_split = get_agent_class_split(args)
+    return len(class_split[int(sender_agent)]) * samples_per_class
+
+
 def validate_packets(args, packet_method):
     """读取 manifest 并统计每个 packet 与合并后的有效性指标。"""
     rows = read_packet_manifest(args, packet_method)
@@ -113,6 +124,7 @@ def validate_packets(args, packet_method):
     per_class_train = Counter()
     total_sender_logit_bytes = 0
     warnings = []
+    class_split = get_agent_class_split(args)
 
     for row in rows:
         packet_path = row["packet_path"]
@@ -126,8 +138,14 @@ def validate_packets(args, packet_method):
         per_class_train.update({int(k): v for k, v in train_dist.items()})
         total_raw += int(consumed["raw_images"])
         total_train += int(consumed["num_images"])
-        if packet_method == "full_real" and args.dataset == "cifar100" and int(consumed["raw_images"]) != 12500:
-            warnings.append(f"agent {row['sender_agent']} raw_images={consumed['raw_images']}，CIFAR-100 full_real 期望 12500")
+        if packet_method == "full_real" and args.dataset == "cifar100":
+            sender_agent = int(row["sender_agent"])
+            expected_sender_raw = _expected_full_real_sender_raw(args, sender_agent)
+            if int(consumed["raw_images"]) != expected_sender_raw:
+                warnings.append(
+                    f"agent {sender_agent} raw_images={consumed['raw_images']}，"
+                    f"CIFAR-100 full_real 期望 {expected_sender_raw}"
+                )
         has_sender_logits = bool(packet.get("has_sender_logits", False))
         sender_logit_shape = ""
         sender_logit_dim = int(packet.get("sender_logit_dim", 0))
@@ -180,6 +198,17 @@ def validate_packets(args, packet_method):
                 "generalist_logit_num_images": generalist_logit_num_images,
                 "generalist_logit_dtype": generalist_logit_dtype,
                 "generalist_logit_bytes": generalist_logit_bytes,
+                "packet_sha256": file_sha256(packet_path),
+                "pool_source_sha256": packet.get("meta", {}).get("pool_source_sha256", ""),
+                "decoded_images_sha256": packet.get("decoded_integrity", {}).get("decoded_images_sha256", ""),
+                "decoded_labels_sha256": packet.get("decoded_integrity", {}).get("decoded_labels_sha256", ""),
+                "sender_logits_sha256": packet.get("decoded_integrity", {}).get("sender_logits_sha256", ""),
+                "decoded_alignment_sha256": packet.get("decoded_integrity", {}).get(
+                    "decoded_alignment_sha256", ""
+                ),
+                "expert_checkpoint_sha256": packet.get("sender_logit_teacher", {}).get(
+                    "checkpoint_sha256", ""
+                ),
             }
         )
 
@@ -191,8 +220,12 @@ def validate_packets(args, packet_method):
         "per_class_train_images": {str(k): int(per_class_train.get(k, 0)) for k in range(get_num_classes(args))},
         "total_sender_logit_bytes": int(total_sender_logit_bytes),
         "total_generalist_logit_bytes": int(sum(row.get("generalist_logit_bytes", 0) for row in packet_rows)),
+        "strict_packet_validation": strict_packet_validation_enabled(args),
+        "communication_protocol": str(getattr(args, "communication_protocol", "legacy")),
     }
     warnings.extend(_build_warning(args, packet_method, summary))
+    if strict_packet_validation_enabled(args) and warnings:
+        raise ValueError("Strict packet validation failed: " + "; ".join(warnings))
     result = {"summary": summary, "packets": packet_rows, "warnings": warnings}
     json_path, csv_path = _metrics_paths(args, packet_method)
     json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +258,13 @@ def validate_packets(args, packet_method):
             "generalist_logit_num_images",
             "generalist_logit_dtype",
             "generalist_logit_bytes",
+            "packet_sha256",
+            "pool_source_sha256",
+            "decoded_images_sha256",
+            "decoded_labels_sha256",
+            "sender_logits_sha256",
+            "decoded_alignment_sha256",
+            "expert_checkpoint_sha256",
         ]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()

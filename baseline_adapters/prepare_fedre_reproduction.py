@@ -1,14 +1,24 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
 from sklearn.model_selection import train_test_split
 from torchvision.datasets import CIFAR100
+
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from agent_data import get_agent_class_split  # noqa: E402
+from config_adapter import load_config  # noqa: E402
 
 
 OFFICIAL_DATASET = "Cifar100FedREPat10"
@@ -25,6 +35,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fedre-dataset-root",
         default="external_baselines/repos/FedRE/HtFLlib/dataset",
+    )
+    parser.add_argument(
+        "--project-config",
+        nargs="+",
+        default=None,
+        help="One or more current project configs whose 5/10/20-agent class splits should be exported.",
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
@@ -44,15 +60,106 @@ def main() -> None:
     test_x = np.asarray(test.data)
     test_y = np.asarray(test.targets, dtype=np.int64)
 
-    official_root = output_root / OFFICIAL_DATASET
-    social_root = output_root / SOCIAL_DATASET
-    _prepare_official_pat10(official_root, train_x, train_y, test_x, test_y, force=args.force)
-    _prepare_social_pat4(social_root, train_x, train_y, test_x, test_y, force=args.force)
-    _link_dataset(official_root, fedre_dataset_root / OFFICIAL_DATASET)
-    _link_dataset(social_root, fedre_dataset_root / SOCIAL_DATASET)
+    if args.project_config:
+        for config_value in args.project_config:
+            config_path = Path(config_value).resolve()
+            project_cfg = load_config(config_path)
+            dataset_name = project_dataset_name(project_cfg)
+            project_root = output_root / dataset_name
+            _prepare_project_split(
+                project_root,
+                dataset_name,
+                config_path,
+                project_cfg,
+                train_x,
+                train_y,
+                test_x,
+                test_y,
+                force=args.force,
+            )
+            _link_dataset(project_root, fedre_dataset_root / dataset_name)
+            print(f"[fedre-data] project={project_root} dataset={dataset_name}")
+    else:
+        official_root = output_root / OFFICIAL_DATASET
+        social_root = output_root / SOCIAL_DATASET
+        _prepare_official_pat10(official_root, train_x, train_y, test_x, test_y, force=args.force)
+        _prepare_social_pat4(social_root, train_x, train_y, test_x, test_y, force=args.force)
+        _link_dataset(official_root, fedre_dataset_root / OFFICIAL_DATASET)
+        _link_dataset(social_root, fedre_dataset_root / SOCIAL_DATASET)
 
-    print(f"[fedre-data] official={official_root}")
-    print(f"[fedre-data] social={social_root}")
+        print(f"[fedre-data] official={official_root}")
+        print(f"[fedre-data] social={social_root}")
+
+
+def project_dataset_name(project_cfg: dict) -> str:
+    class_split = get_agent_class_split(project_cfg)
+    seed = int(project_cfg.get("runtime", {}).get("seed", 0))
+    canonical = json.dumps(
+        {str(agent): classes for agent, classes in class_split.items()},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    split_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
+    return f"Cifar100ProjectA{len(class_split)}S{seed}_{split_hash}"
+
+
+def _prepare_project_split(
+    root: Path,
+    dataset_name: str,
+    config_path: Path,
+    project_cfg: dict,
+    train_x: np.ndarray,
+    train_y: np.ndarray,
+    test_x: np.ndarray,
+    test_y: np.ndarray,
+    *,
+    force: bool,
+) -> None:
+    class_split = get_agent_class_split(project_cfg)
+    if len(class_split) not in {5, 10, 20}:
+        raise ValueError(f"FedRE project adapter supports 5/10/20 agents, got {len(class_split)}")
+    if sorted(class_split) != list(range(len(class_split))):
+        raise ValueError("FedRE project agent IDs must be contiguous from zero")
+    flattened = [class_id for classes in class_split.values() for class_id in classes]
+    if sorted(flattened) != list(range(100)) or len(flattened) != 100:
+        raise ValueError("FedRE project classes must be a disjoint global-label cover of 0-99")
+
+    config_sha256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    manifest_path = root / "manifest.json"
+    if manifest_path.exists() and not force:
+        manifest = _validate_existing(root, expected_clients=len(class_split))
+        if manifest.get("project_config_sha256") != config_sha256:
+            raise ValueError(f"{root}: existing project config SHA differs")
+        if manifest.get("fedre_dataset_name") != dataset_name:
+            raise ValueError(f"{root}: existing FedRE dataset name differs")
+        return
+
+    normalized_train = _normalize(train_x)
+    normalized_test = _normalize(test_x)
+    agents: dict[str, dict] = {}
+    for client_id, classes in class_split.items():
+        train_indices = np.flatnonzero(np.isin(train_y, classes))
+        test_indices = np.flatnonzero(np.isin(test_y, classes))
+        local_train_x, local_train_y = normalized_train[train_indices], train_y[train_indices]
+        local_test_x, local_test_y = normalized_test[test_indices], test_y[test_indices]
+        _save_client(root, client_id, local_train_x, local_train_y, local_test_x, local_test_y)
+        agents[str(client_id)] = _agent_manifest(classes, local_train_y, local_test_y)
+
+    _write_dataset_metadata(
+        root,
+        dataset_name=dataset_name,
+        protocol=f"project_nested_{len(class_split)}agent_class_disjoint_official_train_test",
+        agents=agents,
+        source_train_images=len(train_y),
+        source_test_images=len(test_y),
+        official_test_preserved=True,
+        extra_manifest={
+            "project_config": str(config_path),
+            "project_config_sha256": config_sha256,
+            "project_run_name": str(project_cfg["project"]["run_name"]),
+            "class_assignment_seed": int(project_cfg.get("runtime", {}).get("seed", 0)),
+        },
+    )
 
 
 def _prepare_official_pat10(
@@ -173,6 +280,7 @@ def _write_dataset_metadata(
     source_train_images: int,
     source_test_images: int,
     official_test_preserved: bool,
+    extra_manifest: dict | None = None,
 ) -> None:
     manifest = {
         "dataset": "cifar100",
@@ -187,6 +295,8 @@ def _write_dataset_metadata(
         "official_test_preserved": official_test_preserved,
         "agents": agents,
     }
+    if extra_manifest:
+        manifest.update(extra_manifest)
     config = {
         "num_clients": len(agents),
         "num_classes": 100,
@@ -205,7 +315,7 @@ def _write_dataset_metadata(
     _validate_existing(root, expected_clients=len(agents))
 
 
-def _validate_existing(root: Path, *, expected_clients: int) -> None:
+def _validate_existing(root: Path, *, expected_clients: int) -> dict:
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     if int(manifest["num_clients"]) != expected_clients:
         raise ValueError(f"{root}: expected {expected_clients} clients")
@@ -219,6 +329,7 @@ def _validate_existing(root: Path, *, expected_clients: int) -> None:
         all_classes.extend(int(cls) for cls in info["classes"])
     if sorted(all_classes) != list(range(100)):
         raise ValueError(f"{root}: client class sets must be a disjoint cover of 0-99")
+    return manifest
 
 
 def _atomic_npz(path: Path, payload: dict[str, np.ndarray]) -> None:

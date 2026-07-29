@@ -15,13 +15,12 @@
 
 历史文档位于 `docs/archive/`，不得作为当前方法或结果来源。
 
-## 当前主设定
+## 协议入口
 
-```text
-CIFAR-100 / 4 class-disjoint agents / one compact ResNet per seed
-Sender task-backbone-guided DSDM images + sender expert-class logits
-IPC=10 primary / IPC=50 extension
-```
+当前计划、正在验证的协议、历史4-agent正式协议和结果可比性边界均只以
+`PROJECT_SPEC.md` 为准；README 不复制实验口径，避免与研究规范产生两个事实来源。
+论文方法写作请直接从 `PROJECT_SPEC.md` 的“论文方法写作交接：定义、公式与代码映射”一节开始，
+该节同时给出agent自蒸馏叙事、DKP-SL数学定义、实现入口、模块证据和claim边界。
 
 ## 主要入口
 

@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -103,10 +105,8 @@ def diffaug(args, device='cuda'):
 
     return aug_batch, aug_rand
 
-
-
-if __name__ == '__main__':
-    from argument import args
+def train_pretrained_models(args):
+    """Train the guide pool with the original DSDM pre-training procedure."""
     import torch.backends.cudnn as cudnn
     cudnn.benchmark = True
     if args.seed > 0:
@@ -114,9 +114,8 @@ if __name__ == '__main__':
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)
 
-    os.makedirs(args.save_pretrain_dir, exist_ok=True)
-
-
+    save_dir = Path(args.save_pretrain_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
     trainset, val_loader = load_resized_data(args)
     if args.load_memory:
         loader_real = ClassMemDataLoader(trainset, batch_size=args.batch_real)
@@ -129,6 +128,7 @@ if __name__ == '__main__':
                                       drop_last=True)
     nclass = trainset.nclass
     aug, aug_rand = diffaug(args)
+    paths = []
     for it in range(args.pretrained_model_number):
     
         model = define_model(args, nclass).to('cuda')
@@ -146,4 +146,92 @@ if __name__ == '__main__':
                         aug=aug_rand,
                         mixup=args.mixup_net)
         model = model.to('cpu')
-        torch.save(model.state_dict(), f'./{args.save_pretrain_dir}/{args.dataset}_model_{it}.pth')
+        path = save_dir / f'{args.dataset}_model_{it}.pth'
+        torch.save(model.state_dict(), path)
+        paths.append(path)
+
+    # Keep the loader alive for exactly the same lifetime as the original script.
+    del val_loader
+    return paths
+
+
+def train_pretrained_trajectory(args, snapshot_epochs):
+    """Train one DSDM guide trajectory and expose its epoch snapshots as a pool."""
+    import torch.backends.cudnn as cudnn
+
+    epochs = sorted({int(value) for value in snapshot_epochs})
+    max_epochs = int(args.pretrained_epochs)
+    if not epochs or epochs[0] <= 0 or epochs[-1] != max_epochs:
+        raise ValueError(
+            f"trajectory snapshots must end at pretrained_epochs: "
+            f"snapshots={epochs} pretrained_epochs={max_epochs}"
+        )
+
+    cudnn.benchmark = True
+    if args.seed > 0:
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        torch.cuda.manual_seed(args.seed)
+
+    save_dir = Path(args.save_pretrain_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+    trainset, val_loader = load_resized_data(args)
+    if args.load_memory:
+        loader_real = ClassMemDataLoader(trainset, batch_size=args.batch_real)
+    else:
+        loader_real = ClassDataLoader(
+            trainset,
+            batch_size=args.batch_real,
+            num_workers=args.workers,
+            shuffle=True,
+            pin_memory=True,
+            drop_last=True,
+        )
+
+    model = define_model(args, trainset.nclass).to('cuda')
+    optim_net = optim.SGD(
+        model.parameters(),
+        args.lr,
+        momentum=args.momentum,
+        weight_decay=args.weight_decay,
+    )
+    criterion = nn.CrossEntropyLoss()
+    _, aug_rand = diffaug(args)
+    snapshot_to_index = {epoch: index for index, epoch in enumerate(epochs)}
+    paths = [save_dir / f'{args.dataset}_model_{index}.pth' for index in range(len(epochs))]
+
+    for epoch in range(1, max_epochs + 1):
+        train_epoch(
+            args,
+            loader_real,
+            model,
+            criterion,
+            optim_net,
+            aug=aug_rand,
+            mixup=args.mixup_net,
+        )
+        if epoch in snapshot_to_index:
+            index = snapshot_to_index[epoch]
+            state = {
+                key: value.detach().cpu().clone()
+                for key, value in model.state_dict().items()
+            }
+            torch.save(state, paths[index])
+            print(
+                f"[train_guide_trajectory] epoch={epoch}/{max_epochs} "
+                f"pool_index={index} path={paths[index]}",
+                flush=True,
+            )
+
+    missing = [str(path) for path in paths if not path.exists()]
+    if missing:
+        raise RuntimeError(f"trajectory guide snapshots are incomplete: {missing}")
+    del model
+    del val_loader
+    return paths
+
+
+if __name__ == '__main__':
+    from argument import args
+
+    train_pretrained_models(args)

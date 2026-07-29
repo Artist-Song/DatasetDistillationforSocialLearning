@@ -17,7 +17,10 @@ from data import TensorDataset, save_img
 from data import ClassDataLoader, ClassMemDataLoader, MultiEpochsDataLoader
 from data import MEANS, STDS
 from train import define_model, train_epoch
-from test import test_data, load_ckpt
+if __package__:
+    from .test import test_data, load_ckpt
+else:
+    from test import test_data, load_ckpt
 from misc.augment import DiffAug
 from misc import utils
 from math import ceil
@@ -407,7 +410,8 @@ def load_resized_data(args):
 
 
     active_class_ids = getattr(args, 'active_class_ids', None)
-    if active_class_ids is not None:
+    full_class_ids = list(range(int(getattr(train_dataset, 'nclass', len(set(train_dataset.targets))))))
+    if active_class_ids is not None and [int(c) for c in active_class_ids] != full_class_ids:
         train_dataset = ActiveClassDataset(train_dataset, active_class_ids)
         val_dataset = ActiveClassDataset(val_dataset, active_class_ids)
 
@@ -526,6 +530,15 @@ def matchloss(args, img_real, img_syn, model, h_p=None):
 def condense(args, logger, device='cuda'):
     """Optimize condensed data
     """
+    official_protocol = bool(getattr(args, 'official_dsdm_protocol', False))
+    if official_protocol:
+        if str(getattr(args, 'guide_model_mode', '')).lower() != 'train':
+            raise ValueError('official DSDM protocol requires guide_model_mode=train')
+        if bool(getattr(args, 'freeze_guide_parameters', True)):
+            raise ValueError('official DSDM protocol requires unfrozen guide parameters')
+        if float(getattr(args, 'grad_clip_norm', 0.0) or 0.0) != 0.0:
+            raise ValueError('official DSDM protocol does not use gradient clipping')
+
     # Define real dataset and loader
     trainset, val_loader = load_resized_data(args)
     if args.load_memory:
@@ -546,7 +559,7 @@ def condense(args, logger, device='cuda'):
     synset.init(loader_real, init_type=args.init)
     resume_best_path = Path(getattr(args, "output_root", "")) / "synthetic" / "data_best.pt"
     resume_best_acc = -1
-    if resume_best_path.exists():
+    if resume_best_path.exists() and not official_protocol:
         try:
             # 若已有同一 agent 的最优 synthetic，重启蒸馏时从该结果继续优化，避免低分评估覆盖已有 packet。
             resume_payload = torch.load(resume_best_path, map_location=device)
@@ -606,6 +619,8 @@ def condense(args, logger, device='cuda'):
 
     best_acc = resume_best_acc
     pcbn_regularizer = PCBNRegularizer(args, logger)
+    pcbn_hook_count = 0
+    args.pcbn_hook_count = 0
     grad_clip_norm = float(getattr(args, 'grad_clip_norm', 0.0) or 0.0)
     grad_clip_count = 0
     max_grad_norm = 0.0
@@ -623,15 +638,30 @@ def condense(args, logger, device='cuda'):
         j = random.randint(0, args.pretrained_model_number-1)
         model = define_model(args, nclass).to(device)
         model.load_state_dict(torch.load(pretrained_paths[j], map_location=device))
-        # 固定 guide model，避免 BatchNorm 统计在蒸馏小批量中漂移。
-        model.eval()
-        for param in model.parameters():
-            param.requires_grad_(False)
-        pcbn_regularizer.attach(model)
+        guide_model_mode = str(getattr(args, 'guide_model_mode', 'eval')).lower()
+        if guide_model_mode == 'train':
+            model.train()
+        elif guide_model_mode == 'eval':
+            model.eval()
+        else:
+            raise ValueError(f"unsupported guide_model_mode: {guide_model_mode}")
+        freeze_guide_parameters = bool(getattr(args, 'freeze_guide_parameters', True))
+        if freeze_guide_parameters:
+            for param in model.parameters():
+                param.requires_grad_(False)
+        current_pcbn_hooks = pcbn_regularizer.attach(model)
+        if pcbn_regularizer.enabled:
+            if pcbn_hook_count not in {0, current_pcbn_hooks}:
+                raise RuntimeError(
+                    f'PCBN hook count changed between guides: {pcbn_hook_count} -> {current_pcbn_hooks}'
+                )
+            pcbn_hook_count = current_pcbn_hooks
+            args.pcbn_hook_count = current_pcbn_hooks
 
         loss_total = 0
         pcbn_loss_total = 0
-        ensure_finite_tensor(synset.data, 'synthetic images', iteration=it, guide_idx=j)
+        if not official_protocol:
+            ensure_finite_tensor(synset.data, 'synthetic images', iteration=it, guide_idx=j)
         synset.data.data = torch.clamp(synset.data.data, min=0., max=1.)
         ts.set()
 
@@ -652,33 +682,36 @@ def condense(args, logger, device='cuda'):
             if pcbn_loss is not None:
                 loss = loss + pcbn_loss
                 pcbn_loss_total += float(pcbn_loss.detach().item())
-            ensure_finite_tensor(
-                loss.detach(),
-                'DSDM loss',
-                iteration=it,
-                class_id=c,
-                guide_idx=j,
-            )
+            if not official_protocol:
+                ensure_finite_tensor(
+                    loss.detach(),
+                    'DSDM loss',
+                    iteration=it,
+                    class_id=c,
+                    guide_idx=j,
+                )
             loss_total += float(loss.detach().item())
             ts.stamp("loss")
             loss.backward()
-            grad_norm, was_clipped = clip_and_validate_gradients(
-                synset.parameters(),
-                grad_clip_norm,
-                iteration=it,
-                class_id=c,
-                guide_idx=j,
-            )
-            max_grad_norm = max(max_grad_norm, grad_norm)
-            grad_clip_count += int(was_clipped)
+            if not official_protocol:
+                grad_norm, was_clipped = clip_and_validate_gradients(
+                    synset.parameters(),
+                    grad_clip_norm,
+                    iteration=it,
+                    class_id=c,
+                    guide_idx=j,
+                )
+                max_grad_norm = max(max_grad_norm, grad_norm)
+                grad_clip_count += int(was_clipped)
             optim_img.step()
-            ensure_finite_tensor(
-                synset.data,
-                'updated synthetic images',
-                iteration=it,
-                class_id=c,
-                guide_idx=j,
-            )
+            if not official_protocol:
+                ensure_finite_tensor(
+                    synset.data,
+                    'updated synthetic images',
+                    iteration=it,
+                    class_id=c,
+                    guide_idx=j,
+                )
             ts.stamp("backward")
             ts.flush()
      
@@ -691,33 +724,36 @@ def condense(args, logger, device='cuda'):
                 with torch.no_grad():
                     feature_h = get_feature_list(model, syn_img_aug, args.idx_from, args.idx_to)
                 smooth_syns[c] = feature_h[len(feature_h)-1].mean(0)
-                ensure_finite_tensor(
-                    smooth_syns[c],
-                    'synthetic feature prototype',
-                    iteration=it,
-                    class_id=c,
-                    guide_idx=j,
-                )
+                if not official_protocol:
+                    ensure_finite_tensor(
+                        smooth_syns[c],
+                        'synthetic feature prototype',
+                        iteration=it,
+                        class_id=c,
+                        guide_idx=j,
+                    )
                 h_p[c] = smooth_syns[c]
             else:
                 with torch.no_grad():
                     feature_h = get_feature_list(model, syn_img_aug, args.idx_from, args.idx_to)
                 smooth_syns[c] = feature_h[len(feature_h)-1].mean(0)
-                ensure_finite_tensor(
-                    smooth_syns[c],
-                    'synthetic feature prototype',
-                    iteration=it,
-                    class_id=c,
-                    guide_idx=j,
-                )
+                if not official_protocol:
+                    ensure_finite_tensor(
+                        smooth_syns[c],
+                        'synthetic feature prototype',
+                        iteration=it,
+                        class_id=c,
+                        guide_idx=j,
+                    )
                 h_p[c] = (1 -args.smooth_factor) * smooth_syns[c] + args.smooth_factor * h_p[c]
-                ensure_finite_tensor(
-                    h_p[c],
-                    'smoothed feature prototype',
-                    iteration=it,
-                    class_id=c,
-                    guide_idx=j,
-                )
+                if not official_protocol:
+                    ensure_finite_tensor(
+                        h_p[c],
+                        'smoothed feature prototype',
+                        iteration=it,
+                        class_id=c,
+                        guide_idx=j,
+                    )
 
          # Logging
         if it % it_log == 0:
@@ -756,6 +792,16 @@ def condense(args, logger, device='cuda'):
                             'sender_model': getattr(args, 'sender_model', getattr(args, 'net_type', '')),
                             'guide_epoch': int(getattr(args, 'guide_epoch', args.pretrained_epochs)),
                             'guide_model_count': int(args.pretrained_model_number),
+                            'guide_pool_design': str(
+                                getattr(args, 'guide_pool_design', 'independent_final_models')
+                            ),
+                            'guide_trajectory_count': int(
+                                getattr(args, 'guide_trajectory_count', args.pretrained_model_number)
+                            ),
+                            'guide_checkpoint_epochs': [
+                                int(value)
+                                for value in getattr(args, 'guide_trajectory_checkpoint_epochs', [])
+                            ],
                             'guide_source_root': getattr(args, 'guide_source_root', None),
                             'guide_pretrained_manifest': str(
                                 Path(args.save_pretrain_dir) / 'pretrained_manifest.json'
@@ -765,8 +811,17 @@ def condense(args, logger, device='cuda'):
                             'packet_format': 'compact_multi_formation',
                             'pcbn_enabled': bool(pcbn_regularizer.enabled),
                             'pcbn_weight': float(pcbn_regularizer.weight),
+                            'pcbn_layers': getattr(args, 'pcbn_layers', 'all'),
+                            'pcbn_normalize_layers': bool(
+                                getattr(args, 'pcbn_normalize_layers', True)
+                            ),
+                            'pcbn_hook_count': int(pcbn_hook_count),
                             'lr_img': float(args.lr_img),
                             'grad_clip_norm': float(grad_clip_norm),
+                            'guide_model_mode': guide_model_mode,
+                            'freeze_guide_parameters': freeze_guide_parameters,
+                            'official_dsdm_protocol': official_protocol,
+                            'official_dsdm_commit': getattr(args, 'official_dsdm_commit', None),
                         },
                     )
                     _try_stage1_output(
@@ -803,6 +858,9 @@ def condense(args, logger, device='cuda'):
         'grad_clip_norm': float(grad_clip_norm),
         'grad_clip_count': int(grad_clip_count),
         'max_grad_norm': float(max_grad_norm),
+        'pcbn_enabled': bool(pcbn_regularizer.enabled),
+        'pcbn_weight': float(pcbn_regularizer.weight),
+        'pcbn_hook_count': int(pcbn_hook_count),
     }
 
 
@@ -816,8 +874,11 @@ def run_dsdm(args):
     assert args.ipc > 0
 
     cudnn.benchmark = True
-    if args.seed >= 0:
-        random.seed(args.seed)
+    official_protocol = bool(getattr(args, 'official_dsdm_protocol', False))
+    should_seed = args.seed > 0 if official_protocol else args.seed >= 0
+    if should_seed:
+        if not official_protocol:
+            random.seed(args.seed)
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
         torch.cuda.manual_seed(args.seed)

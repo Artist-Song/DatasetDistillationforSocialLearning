@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import json
 import random
@@ -11,7 +12,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 
 from agent_data import get_agent_class_split, get_agent_dir, get_agent_train_dataset, get_num_classes, get_test_dataset
-from output_manager import atomic_torch_save, atomic_write_json
+from output_manager import atomic_copyfile, atomic_torch_save, atomic_write_json
 
 
 def _sha256_file(path):
@@ -30,7 +31,7 @@ def _ensure_dsdm_path():
     root = Path(__file__).resolve().parent
     dsdm_root = root / "DSDM"
     if str(dsdm_root) not in sys.path:
-        sys.path.insert(0, str(dsdm_root))
+        sys.path.append(str(dsdm_root))
 
 
 def _guide_pool_dir(args, ckpt_dir, epoch=None):
@@ -70,7 +71,55 @@ def _agent_test_subset(args, agent_id):
     return Subset(dataset, indices)
 
 
-def _evaluate_expert_accuracy(model, loader, device):
+def _validate_active_class_ids(active_class_ids, output_dim):
+    class_ids = [int(value) for value in active_class_ids]
+    if not class_ids or len(class_ids) != len(set(class_ids)):
+        raise ValueError(f"active_class_ids must be non-empty and unique: {class_ids}")
+    if min(class_ids) < 0 or max(class_ids) >= int(output_dim):
+        raise ValueError(
+            f"active_class_ids outside output range [0, {output_dim}): {class_ids}"
+        )
+    return class_ids
+
+
+def mask_inactive_class_logits(logits, labels, active_class_ids):
+    """Mask non-local columns while preserving global labels unchanged."""
+    if logits.ndim != 2:
+        raise ValueError(f"expected 2D classifier logits, got {tuple(logits.shape)}")
+    class_ids = _validate_active_class_ids(active_class_ids, logits.shape[1])
+    if labels.ndim != 1 or labels.shape[0] != logits.shape[0]:
+        raise ValueError(
+            f"label shape mismatch: logits={tuple(logits.shape)} labels={tuple(labels.shape)}"
+        )
+    if labels.numel() > 0 and (int(labels.min()) < 0 or int(labels.max()) >= logits.shape[1]):
+        raise ValueError("global labels fall outside classifier output range")
+    active_mask = torch.zeros(logits.shape[1], dtype=torch.bool, device=logits.device)
+    active_mask[class_ids] = True
+    if labels.numel() > 0 and not bool(active_mask[labels].all()):
+        invalid = sorted({int(value) for value in labels[~active_mask[labels]].tolist()})
+        raise ValueError(f"batch contains labels outside active_class_ids: {invalid}")
+    return logits.masked_fill(~active_mask.unsqueeze(0), torch.finfo(logits.dtype).min)
+
+
+def _classification_loss(criterion, logits, labels, active_class_ids=None):
+    if active_class_ids is not None:
+        logits = mask_inactive_class_logits(logits, labels, active_class_ids)
+    return criterion(logits, labels)
+
+
+def _build_sgd_optimizer(model, lr, momentum, weight_decay):
+    """Build SGD with cosine scale isolated in a zero-decay parameter group."""
+    _ensure_dsdm_path()
+    from models.cosine_classifier import sgd_parameter_groups
+
+    return optim.SGD(
+        sgd_parameter_groups(model, weight_decay),
+        lr=float(lr),
+        momentum=float(momentum),
+    )
+
+
+def _evaluate_expert_accuracy(model, loader, device, active_class_ids=None):
     """评估 guide model 在本 agent expert classes 上的准确率。"""
     model.eval()
     correct = 0
@@ -80,6 +129,8 @@ def _evaluate_expert_accuracy(model, loader, device):
             images = images.to(device)
             labels = labels.to(device)
             logits = model(images)
+            if active_class_ids is not None:
+                logits = mask_inactive_class_logits(logits, labels, active_class_ids)
             correct += (logits.argmax(dim=1) == labels).sum().item()
             total += labels.numel()
     return 100.0 * correct / max(1, total)
@@ -128,7 +179,17 @@ def _build_dsdm_batch_augmentation(args, enabled):
     return DiffAug(strategy=args.dsa_strategy, batch=False)
 
 
-def _train_epoch(model, loader, criterion, optimizer, device, args=None, use_dsdm_train=False, batch_aug=None):
+def _train_epoch(
+    model,
+    loader,
+    criterion,
+    optimizer,
+    device,
+    args=None,
+    use_dsdm_train=False,
+    batch_aug=None,
+    active_class_ids=None,
+):
     """Train one epoch and return its sample-weighted mean loss."""
     model.train()
     loss_sum = 0.0
@@ -159,9 +220,15 @@ def _train_epoch(model, loader, criterion, optimizer, device, args=None, use_dsd
                 (bbx2 - bbx1) * (bby2 - bby1) / (images.size(-1) * images.size(-2))
             )
             logits = model(images)
-            loss = criterion(logits, labels) * ratio + criterion(logits, labels_b) * (1.0 - ratio)
+            loss = _classification_loss(
+                criterion, logits, labels, active_class_ids
+            ) * ratio + _classification_loss(
+                criterion, logits, labels_b, active_class_ids
+            ) * (1.0 - ratio)
         else:
-            loss = criterion(model(images), labels)
+            loss = _classification_loss(
+                criterion, model(images), labels, active_class_ids
+            )
         loss.backward()
         optimizer.step()
         loss_sum += float(loss.detach().item()) * labels.numel()
@@ -213,19 +280,10 @@ def _select_best_expert(args, agent_id, ckpt_dir, device):
 
 def _train_guide_pool(args, agent_id, ckpt_dir, device, overwrite=False):
     """Train guide trajectories once and persist requested epoch snapshots."""
-    from train import define_model
-
     if not overwrite and _all_guide_snapshots_exist(args, ckpt_dir):
         return _guide_paths(args, ckpt_dir)
 
-    base_seed = int(args.seed) + 100_000 * int(agent_id)
     guide_batch_size = int(getattr(args, "guide_batch_size", args.batch_size))
-    dataset = get_agent_train_dataset(
-        args,
-        agent_id,
-        normalize=True,
-        augment=bool(getattr(args, "guide_augment", False)),
-    )
     max_epochs = int(getattr(args, "guide_max_epochs", args.pretrained_epochs))
     snapshot_epochs = sorted({int(v) for v in getattr(args, "guide_snapshot_epochs", [max_epochs])})
     if not snapshot_epochs or snapshot_epochs[0] <= 0 or snapshot_epochs[-1] > max_epochs:
@@ -234,7 +292,197 @@ def _train_guide_pool(args, agent_id, ckpt_dir, device, overwrite=False):
     if model_count <= 0:
         raise RuntimeError("guide_model_number 必须大于 0")
 
+    guide_training_style = str(getattr(args, "guide_training_style", "plain")).lower()
+    if guide_training_style == "dsdm_single_trajectory":
+        expected_classes = list(range(get_num_classes(args)))
+        active_classes = [int(value) for value in getattr(args, "active_class_ids", expected_classes)]
+        trajectory_epochs = sorted(
+            {int(value) for value in getattr(args, "guide_trajectory_checkpoint_epochs", [])}
+        )
+        if active_classes != expected_classes:
+            raise ValueError(
+                "DSDM single-trajectory guide path only supports all classes; "
+                f"active={active_classes} expected={expected_classes}"
+            )
+        if snapshot_epochs != [max_epochs]:
+            raise ValueError(
+                "DSDM single-trajectory pool is exposed as one final guide pool; "
+                f"snapshot_epochs={snapshot_epochs}"
+            )
+        if len(trajectory_epochs) != model_count or trajectory_epochs[-1:] != [max_epochs]:
+            raise ValueError(
+                "trajectory checkpoint count must equal the DSDM pool size and end at max_epochs; "
+                f"checkpoints={trajectory_epochs} model_count={model_count} max={max_epochs}"
+            )
+        if int(getattr(args, "guide_trajectory_count", 1)) != 1:
+            raise ValueError("DSDM single-trajectory guide pool requires trajectory_count=1")
+        if str(getattr(args, "guide_scheduler", "none")).lower() not in {"", "none"}:
+            raise ValueError("DSDM original guide training does not use a scheduler")
+        if guide_batch_size != int(args.batch_real):
+            raise ValueError(
+                "DSDM original guide batch size must equal batch_real; "
+                f"guide={guide_batch_size} batch_real={args.batch_real}"
+            )
+
+        from pre_train_model import train_pretrained_trajectory
+
+        official_args = copy.copy(args)
+        official_args.pretrained_model_number = 1
+        official_args.pretrained_epochs = max_epochs
+        official_args.lr = float(getattr(args, "guide_lr", args.lr))
+        official_args.batch_real = guide_batch_size
+        official_args.classifier_type = str(getattr(args, "guide_classifier_type", "linear"))
+        official_args.cosine_scale_init = float(getattr(args, "guide_cosine_scale_init", 10.0))
+        official_args.save_pretrain_dir = str(
+            _guide_pool_dir(args, ckpt_dir, epoch=max_epochs) / "official_dsdm_trajectory"
+        )
+        print(
+            f"[train_guides] agent={agent_id} source=DSDM/pre_train_model.py "
+            f"trajectories=1 epochs={max_epochs} snapshots={trajectory_epochs}",
+            flush=True,
+        )
+        source_paths = train_pretrained_trajectory(official_args, trajectory_epochs)
+        destination_paths = _guide_paths(args, ckpt_dir, epoch=max_epochs)
+        if len(source_paths) != len(destination_paths):
+            raise RuntimeError(
+                f"DSDM trajectory pool size mismatch: source={len(source_paths)} "
+                f"expected={len(destination_paths)}"
+            )
+        for source, destination in zip(source_paths, destination_paths):
+            atomic_copyfile(source, destination)
+        atomic_write_json(
+            {
+                "agent_id": int(agent_id),
+                "role": "dsdm_single_trajectory_checkpoint_pool",
+                "pool_design": "single_trajectory_epoch_snapshots",
+                "trajectory_count": 1,
+                "trajectory_max_epochs": max_epochs,
+                "checkpoint_epochs": trajectory_epochs,
+                "model_count": model_count,
+                "model_paths": [str(path) for path in destination_paths],
+                "model_artifacts": [
+                    {
+                        "pool_index": index,
+                        "checkpoint_epoch": trajectory_epochs[index],
+                        "path": str(path),
+                        "sha256": _sha256_file(path),
+                    }
+                    for index, path in enumerate(destination_paths)
+                ],
+                "source_impl": "DSDM/pre_train_model.py::train_pretrained_trajectory",
+                "official_training_primitives": "DSDM/pre_train_model.py::diffaug + train.py::train_epoch",
+                "official_source": "https://github.com/Li-Hongcheng/DSDM",
+                "official_commit": getattr(args, "official_dsdm_commit", None),
+                "optimizer": "sgd",
+                "lr": float(official_args.lr),
+                "momentum": float(args.momentum),
+                "weight_decay": float(args.weight_decay),
+                "batch_size": guide_batch_size,
+                "load_memory": bool(args.load_memory),
+                "augmentation_matching": str(args.aug_type),
+                "augmentation_net_update": "color_crop",
+                "mixup": str(args.mixup_net),
+                "mix_probability": float(args.mix_p),
+                "scheduler": "none",
+                "training_style": guide_training_style,
+                "test_used_for_selection": False,
+            },
+            _guide_pool_dir(args, ckpt_dir, epoch=max_epochs) / "guide_pool_manifest.json",
+        )
+        return destination_paths
+
+    if guide_training_style == "dsdm":
+        expected_classes = list(range(get_num_classes(args)))
+        active_classes = [int(value) for value in getattr(args, "active_class_ids", expected_classes)]
+        if active_classes != expected_classes:
+            raise ValueError(
+                "DSDM 原始 guide 训练路径只允许全类别数据；"
+                f"active={active_classes} expected={expected_classes}"
+            )
+        if snapshot_epochs != [max_epochs]:
+            raise ValueError(
+                "DSDM 原始 guide 训练路径只保存最终模型；"
+                f"snapshots={snapshot_epochs} max={max_epochs}"
+            )
+        if str(getattr(args, "guide_scheduler", "none")).lower() not in {"", "none"}:
+            raise ValueError("DSDM 原始 guide 训练不使用 scheduler")
+        if guide_batch_size != int(args.batch_real):
+            raise ValueError(
+                "DSDM 原始 guide batch size 必须等于 batch_real；"
+                f"guide={guide_batch_size} batch_real={args.batch_real}"
+            )
+
+        from pre_train_model import train_pretrained_models
+
+        official_args = copy.copy(args)
+        official_args.pretrained_model_number = model_count
+        official_args.pretrained_epochs = max_epochs
+        official_args.lr = float(getattr(args, "guide_lr", args.lr))
+        official_args.batch_real = guide_batch_size
+        official_args.classifier_type = str(getattr(args, "guide_classifier_type", "linear"))
+        official_args.cosine_scale_init = float(getattr(args, "guide_cosine_scale_init", 10.0))
+        official_args.save_pretrain_dir = str(
+            _guide_pool_dir(args, ckpt_dir, epoch=max_epochs) / "official_dsdm_pretrained"
+        )
+        print(
+            f"[train_guides] agent={agent_id} source=DSDM/pre_train_model.py "
+            f"models={model_count} epochs={max_epochs}",
+            flush=True,
+        )
+        source_paths = train_pretrained_models(official_args)
+        destination_paths = _guide_paths(args, ckpt_dir, epoch=max_epochs)
+        if len(source_paths) != len(destination_paths):
+            raise RuntimeError(
+                f"DSDM guide 数量不完整: source={len(source_paths)} expected={len(destination_paths)}"
+            )
+        for source, destination in zip(source_paths, destination_paths):
+            atomic_copyfile(source, destination)
+        atomic_write_json(
+            {
+                "agent_id": int(agent_id),
+                "role": "dsdm_guide_pool",
+                "epoch": max_epochs,
+                "trajectory_max_epochs": max_epochs,
+                "model_count": model_count,
+                "model_paths": [str(path) for path in destination_paths],
+                "model_artifacts": [
+                    {"path": str(path), "sha256": _sha256_file(path)}
+                    for path in destination_paths
+                ],
+                "source_impl": "DSDM/pre_train_model.py::train_pretrained_models",
+                "official_source": "https://github.com/Li-Hongcheng/DSDM",
+                "official_commit": getattr(args, "official_dsdm_commit", None),
+                "optimizer": "sgd",
+                "lr": float(official_args.lr),
+                "momentum": float(args.momentum),
+                "weight_decay": float(args.weight_decay),
+                "batch_size": guide_batch_size,
+                "load_memory": bool(args.load_memory),
+                "augmentation_matching": str(args.aug_type),
+                "augmentation_net_update": "color_crop",
+                "mixup": str(args.mixup_net),
+                "mix_probability": float(args.mix_p),
+                "scheduler": "none",
+                "training_style": "dsdm",
+                "test_used_for_selection": False,
+            },
+            _guide_pool_dir(args, ckpt_dir, epoch=max_epochs) / "guide_pool_manifest.json",
+        )
+        return destination_paths
+
+    from train import define_model
+
+    base_seed = int(args.seed) + 100_000 * int(agent_id)
+    dataset = get_agent_train_dataset(
+        args,
+        agent_id,
+        normalize=True,
+        augment=bool(getattr(args, "guide_augment", False)),
+    )
     criterion = nn.CrossEntropyLoss()
+    guide_args = copy.copy(args)
+    guide_args.classifier_type = str(getattr(args, "guide_classifier_type", "linear"))
+    guide_args.cosine_scale_init = float(getattr(args, "guide_cosine_scale_init", 10.0))
     for model_idx in range(model_count):
         model_seed = base_seed + model_idx
         random.seed(model_seed)
@@ -250,9 +498,9 @@ def _train_guide_pool(args, agent_id, ckpt_dir, device, overwrite=False):
             generator=loader_generator,
             persistent_workers=int(args.workers) > 0,
         )
-        model = define_model(args, get_num_classes(args)).to(device)
-        optimizer = optim.SGD(
-            model.parameters(),
+        model = define_model(guide_args, get_num_classes(args)).to(device)
+        optimizer = _build_sgd_optimizer(
+            model,
             lr=float(getattr(args, "guide_lr", args.lr)),
             momentum=args.momentum,
             weight_decay=args.weight_decay,
@@ -272,7 +520,14 @@ def _train_guide_pool(args, agent_id, ckpt_dir, device, overwrite=False):
         )
         report_every = max(1, max_epochs // 10)
         for epoch in range(1, max_epochs + 1):
-            mean_loss = _train_epoch(model, loader, criterion, optimizer, device)
+            mean_loss = _train_epoch(
+                model,
+                loader,
+                criterion,
+                optimizer,
+                device,
+                args=args,
+            )
             if scheduler is not None:
                 scheduler.step()
             if epoch in snapshot_epochs:
@@ -304,6 +559,7 @@ def _train_guide_pool(args, agent_id, ckpt_dir, device, overwrite=False):
                 "batch_size": guide_batch_size,
                 "augment": bool(getattr(args, "guide_augment", False)),
                 "scheduler": str(getattr(args, "guide_scheduler", "none")),
+                "training_style": guide_training_style,
                 "test_used_for_selection": False,
             },
             pool_dir / "guide_pool_manifest.json",
@@ -348,8 +604,8 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
     torch.manual_seed(base_seed)
     torch.cuda.manual_seed_all(base_seed)
     model = define_model(args, get_num_classes(args)).to(device)
-    optimizer = optim.SGD(
-        model.parameters(),
+    optimizer = _build_sgd_optimizer(
+        model,
         lr=float(args.expert_lr),
         momentum=args.momentum,
         weight_decay=args.weight_decay,
@@ -363,6 +619,9 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
     )
     criterion = nn.CrossEntropyLoss()
     use_dsdm_train = bool(getattr(args, "expert_use_dsdm_train", False))
+    active_class_ids = None
+    if bool(getattr(args, "expert_mask_nonlocal_classes", False)):
+        active_class_ids = [int(value) for value in args.active_class_ids]
     batch_aug = _build_dsdm_batch_augmentation(args, use_dsdm_train)
     validation_best_path = ckpt_dir / "expert_validation_best.pt"
     best_accuracy = -1.0
@@ -378,11 +637,14 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
             args=args,
             use_dsdm_train=use_dsdm_train,
             batch_aug=batch_aug,
+            active_class_ids=active_class_ids,
         )
         if scheduler is not None:
             scheduler.step()
         if epoch % eval_interval == 0 or epoch == max_epochs:
-            validation_accuracy = _evaluate_expert_accuracy(model, validation_loader, device)
+            validation_accuracy = _evaluate_expert_accuracy(
+                model, validation_loader, device, active_class_ids=active_class_ids
+            )
             history.append({"epoch": epoch, "train_loss": train_loss, "validation_accuracy": validation_accuracy})
             print(
                 f"[train_expert] agent={agent_id} epoch={epoch}/{max_epochs} "
@@ -413,8 +675,8 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
         torch.manual_seed(base_seed + 1)
         torch.cuda.manual_seed_all(base_seed + 1)
         model = define_model(args, get_num_classes(args)).to(device)
-        optimizer = optim.SGD(
-            model.parameters(),
+        optimizer = _build_sgd_optimizer(
+            model,
             lr=float(args.expert_lr),
             momentum=args.momentum,
             weight_decay=args.weight_decay,
@@ -436,6 +698,7 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
                 args=args,
                 use_dsdm_train=use_dsdm_train,
                 batch_aug=batch_aug,
+                active_class_ids=active_class_ids,
             )
             if scheduler is not None:
                 scheduler.step()
@@ -446,7 +709,15 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
         model.load_state_dict(torch.load(expert_path, map_location=device))
 
     test_loader = DataLoader(_agent_test_subset(args, agent_id), batch_size=batch_size, shuffle=False, num_workers=0)
-    official_test_accuracy = _evaluate_expert_accuracy(model, test_loader, device)
+    official_test_accuracy = _evaluate_expert_accuracy(
+        model, test_loader, device, active_class_ids=active_class_ids
+    )
+    classifier_type = str(getattr(args, "expert_classifier_type", "linear"))
+    final_scale = None
+    if classifier_type == "cosine":
+        from models.cosine_classifier import get_cosine_classifier
+
+        final_scale = float(get_cosine_classifier(model).scale.detach().cpu())
     manifest = {
         "agent_id": int(agent_id),
         "role": "fully_converged_agent_expert_and_logit_teacher",
@@ -459,6 +730,20 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
         "validation_fraction": validation_fraction,
         "retrained_on_full_local_train": retrained_full,
         "optimizer": "sgd",
+        "global_output_dim": int(get_num_classes(args)),
+        "labels": "global",
+        "active_class_ids": [int(value) for value in args.active_class_ids],
+        "masked_local_ce": active_class_ids is not None,
+        "classifier": {
+            "type": classifier_type,
+            "bias": classifier_type != "cosine",
+            "feature_normalization": classifier_type == "cosine",
+            "weight_normalization": classifier_type == "cosine",
+            "scale_parameterization": "softplus" if classifier_type == "cosine" else None,
+            "scale_init": float(getattr(args, "expert_cosine_scale_init", 10.0)),
+            "final_scale": final_scale,
+            "scale_weight_decay": 0.0 if classifier_type == "cosine" else float(args.weight_decay),
+        },
         "lr": float(args.expert_lr),
         "batch_size": batch_size,
         "augment": bool(args.expert_augment),
@@ -466,6 +751,7 @@ def _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=False)
         "scheduler": str(args.expert_scheduler),
         "history": history,
         "expert_path": str(expert_path),
+        "expert_sha256": _sha256_file(expert_path),
     }
     atomic_write_json(manifest, manifest_path)
     atomic_write_json(manifest, ckpt_dir / "expert_selection.json")
@@ -487,10 +773,27 @@ def train_agent_experts(args, agent_id, resume=False, overwrite=False):
 
     if resume and not overwrite and expert_path.exists() and metadata_path.exists() and _all_guide_snapshots_exist(args, ckpt_dir):
         return expert_path
-    _train_guide_pool(args, agent_id, ckpt_dir, device, overwrite=overwrite)
+    guide_paths = _train_guide_pool(args, agent_id, ckpt_dir, device, overwrite=overwrite)
+    if bool(getattr(args, "guide_only", False)):
+        return guide_paths[0]
     if bool(getattr(args, "separate_expert", False)):
         return _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=overwrite)
     return _select_best_expert(args, agent_id, ckpt_dir, device)
+
+
+def train_agent_expert_only(args, agent_id, resume=False, overwrite=False):
+    """Train only the converged local expert used for receiver init and sender logits."""
+    _ensure_dsdm_path()
+    if not bool(getattr(args, "separate_expert", False)):
+        raise ValueError("Expert-only training requires expert_training.separate=true")
+    ckpt_dir = get_agent_dir(args, agent_id) / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    expert_path = ckpt_dir / "expert_model.pt"
+    manifest_path = ckpt_dir / "expert_manifest.json"
+    if resume and not overwrite and expert_path.exists() and manifest_path.exists():
+        return expert_path
+    device = torch.device("cuda" if args.device == "cuda" and torch.cuda.is_available() else "cpu")
+    return _train_independent_expert(args, agent_id, ckpt_dir, device, overwrite=overwrite)
 
 
 def prepare_agent_pretrained_dir(args, agent_id):
@@ -524,11 +827,20 @@ def prepare_agent_pretrained_dir(args, agent_id):
             }
         )
     with open(dsdm_dir / "pretrained_manifest.json", "w", encoding="utf-8") as f:
+        checkpoint_epochs = [
+            int(value)
+            for value in getattr(args, "guide_trajectory_checkpoint_epochs", [])
+        ]
         json.dump(
             {
                 "agent_id": int(agent_id),
                 "role": "dsdm_guide_pool",
                 "guide_epoch": int(getattr(args, "guide_epoch", args.pretrained_epochs)),
+                "pool_design": str(getattr(args, "guide_pool_design", "independent_final_models")),
+                "trajectory_count": int(
+                    getattr(args, "guide_trajectory_count", args.pretrained_model_number)
+                ),
+                "checkpoint_epochs": checkpoint_epochs,
                 "models": manifest,
             },
             f,

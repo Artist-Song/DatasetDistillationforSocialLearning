@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import torch.nn as nn
 import math
 
+from .cosine_classifier import build_classifier
+
 
 def conv3x3(in_planes, out_planes, stride=1):
     "3x3 convolution with padding"
@@ -126,7 +128,7 @@ class Bottleneck(nn.Module):
 
 class ResNet(nn.Module):
     def __init__(self, dataset, depth, num_classes, norm_type='batch', size=-1, nch=3,
-                 cifar_base_width=32):
+                 cifar_base_width=32, classifier_type='linear', cosine_scale_init=10.0):
         super(ResNet, self).__init__()
         self.dataset = dataset
         self.norm_type = norm_type
@@ -154,7 +156,12 @@ class ResNet(nn.Module):
             self.layer3 = self._make_layer(block, base_width * 4, n, stride=2)
             self.layer4 = self._make_layer(block, base_width * 8, n, stride=2)
             self.avgpool = nn.AvgPool2d(4)
-            self.fc = nn.Linear(base_width * 8 * block.expansion, num_classes)
+            self.fc = build_classifier(
+                base_width * 8 * block.expansion,
+                num_classes,
+                classifier_type=classifier_type,
+                scale_init=cosine_scale_init,
+            )
 
         else:
             blocks = {
@@ -186,7 +193,12 @@ class ResNet(nn.Module):
             self.layer3 = self._make_layer(blocks[depth], 256, layers[depth][2], stride=2)
             self.layer4 = self._make_layer(blocks[depth], 512, layers[depth][3], stride=2)
             self.avgpool = nn.AvgPool2d(7)
-            self.fc = nn.Linear(512 * blocks[depth].expansion, num_classes)
+            self.fc = build_classifier(
+                512 * blocks[depth].expansion,
+                num_classes,
+                classifier_type=classifier_type,
+                scale_init=cosine_scale_init,
+            )
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):

@@ -4,7 +4,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="/root/miniconda3/envs/sp/bin/python"
 CONFIG_ROOT="$ROOT/configs/fullclass_dsdm"
-LOG_ROOT="$ROOT/logs/fullclass_dsdm_seed0"
+LOG_ROOT="$ROOT/logs/fullclass_dsdm_dsdmguidee0200_seed0"
 STATUS_FILE="$LOG_ROOT/status.tsv"
 MAX_PARALLEL="${MAX_PARALLEL:-2}"
 MIN_FREE_GIB="${MIN_FREE_GIB:-8}"
@@ -45,8 +45,8 @@ record_status() {
 
 run_model() {
   local model="$1"
-  local config="$CONFIG_ROOT/fullclass_${model}_ipc10_seed0.yaml"
-  local run_name="cifar100_fullclass_dsdm_${model}_ipc10_seed0"
+  local config="$CONFIG_ROOT/fullclass_${model}_dsdmguidee0200_ipc10_seed0.yaml"
+  local run_name="cifar100_fullclass_dsdm_${model}_dsdmguidee0200_ipc10_seed0"
   local log="$LOG_ROOT/${model}.log"
   local exit_code
 
@@ -102,6 +102,13 @@ wait_group() {
   return "$failures"
 }
 
+"$PYTHON" scripts/audit_official_dsdm.py >>"$LOG_ROOT/launcher.log" 2>&1
+audit_exit=$?
+if [[ "$audit_exit" -ne 0 ]]; then
+  echo "official DSDM source audit failed" >&2
+  exit "$audit_exit"
+fi
+
 "$PYTHON" scripts/prepare_fullclass_dsdm.py >>"$LOG_ROOT/launcher.log" 2>&1
 prepare_exit=$?
 if [[ "$prepare_exit" -ne 0 ]]; then
@@ -109,7 +116,11 @@ if [[ "$prepare_exit" -ne 0 ]]; then
   exit "$prepare_exit"
 fi
 
-models=(conv3 conv4 alexnet resnet10_standard resnet18_standard)
+if [[ -n "${MODELS:-}" ]]; then
+  read -r -a models <<<"$MODELS"
+else
+  models=(conv3 conv4 alexnet resnet10_standard resnet18_standard)
+fi
 failures=0
 pids=()
 for model in "${models[@]}"; do

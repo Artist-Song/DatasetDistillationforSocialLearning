@@ -1,4 +1,5 @@
 import unittest
+from unittest import mock
 
 import torch
 
@@ -52,6 +53,32 @@ class PCBNRegularizerTest(unittest.TestCase):
     def test_non_positive_weight_disables_regularizer(self):
         regularizer = PCBNRegularizer(self._args(enabled=True, weight=0.0))
         self.assertFalse(regularizer.enabled)
+
+    def test_non_finite_weight_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "must be finite"):
+            PCBNRegularizer(self._args(enabled=True, weight=float("nan")))
+
+    def test_unknown_layer_is_rejected(self):
+        args = self._args()
+        args.pcbn_layers = "missing.layer"
+        model = ResNet("cifar100", 10, 100, norm_type="batch", size=32)
+        regularizer = PCBNRegularizer(args)
+        with self.assertRaisesRegex(ValueError, "did not match"):
+            regularizer.attach(model)
+
+    def test_enabled_model_without_batchnorm_is_rejected(self):
+        regularizer = PCBNRegularizer(self._args())
+        with self.assertRaisesRegex(RuntimeError, "no selected BatchNorm"):
+            regularizer.attach(torch.nn.Linear(4, 2))
+
+    def test_incomplete_hook_collection_is_rejected(self):
+        model = ResNet("cifar100", 10, 100, norm_type="batch", size=32).eval()
+        regularizer = PCBNRegularizer(self._args())
+        regularizer.attach(model)
+        with mock.patch.object(model, "forward", return_value=torch.zeros(2, 100)):
+            with self.assertRaisesRegex(RuntimeError, "collection mismatch"):
+                regularizer.loss(model, torch.randn(2, 3, 32, 32), torch.randn(2, 3, 32, 32))
+        regularizer.close()
 
 
 if __name__ == "__main__":

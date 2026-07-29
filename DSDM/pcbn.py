@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,6 +20,8 @@ class PCBNRegularizer:
         self.collecting = False
         self.layer_names = []
         self.logged = False
+        if not math.isfinite(self.weight):
+            raise ValueError(f"PCBN weight must be finite, got {self.weight}")
         if self.weight <= 0:
             self.enabled = False
 
@@ -53,12 +57,25 @@ class PCBNRegularizer:
         if not self.enabled:
             return 0
         bn_index = 0
+        matched_tokens = set()
         for name, module in model.named_modules():
             if isinstance(module, nn.modules.batchnorm._BatchNorm):
                 if self._use_layer(name, bn_index):
                     self.handles.append(module.register_forward_pre_hook(self._hook))
                     self.layer_names.append(name)
+                    if self.layers is not None:
+                        if name in self.layers:
+                            matched_tokens.add(name)
+                        if str(bn_index) in self.layers:
+                            matched_tokens.add(str(bn_index))
                 bn_index += 1
+        if self.layers is not None:
+            unmatched = self.layers - matched_tokens
+            if unmatched:
+                self.close()
+                raise ValueError(f"PCBN layers did not match BatchNorm modules: {sorted(unmatched)}")
+        if not self.handles:
+            raise RuntimeError("PCBN is enabled but the guide model has no selected BatchNorm layers")
         if self.logger is not None and not self.logged:
             self.logger(
                 f"[PCBN] enabled weight={self.weight} "
@@ -98,7 +115,13 @@ class PCBNRegularizer:
                     model(images)
             else:
                 model(images)
-            return [self._stats(record, detach=detach) for record in self.records]
+            stats = [self._stats(record, detach=detach) for record in self.records]
+            if len(stats) != len(self.handles):
+                raise RuntimeError(
+                    "PCBN hook collection mismatch: "
+                    f"expected {len(self.handles)} activations, collected {len(stats)}"
+                )
+            return stats
         finally:
             self.collecting = False
 
@@ -108,13 +131,13 @@ class PCBNRegularizer:
             return None
         if not self.handles:
             self.attach(model)
-        if not self.handles:
-            return syn_images.new_tensor(0.0)
 
         real_stats = self._collect_stats(model, real_images, detach=True)
         syn_stats = self._collect_stats(model, syn_images, detach=False)
-        if not real_stats or len(real_stats) != len(syn_stats):
-            return syn_images.new_tensor(0.0)
+        if len(real_stats) != len(syn_stats):
+            raise RuntimeError(
+                f"PCBN real/synthetic statistic mismatch: {len(real_stats)} != {len(syn_stats)}"
+            )
 
         loss = syn_images.new_tensor(0.0)
         for (real_mean, real_var), (syn_mean, syn_var) in zip(real_stats, syn_stats):

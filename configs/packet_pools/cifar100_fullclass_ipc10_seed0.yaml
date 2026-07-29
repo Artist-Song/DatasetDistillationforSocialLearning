@@ -1,0 +1,23 @@
+schema_version: 1
+protocol: backbone_specific_fullclass_pool_slice_v1
+dataset: cifar100
+num_classes: 100
+ipc: 10
+factor: 2
+decode_type: single
+sources:
+  convnet3w1:
+    packet_path: outputs/cifar100_fullclass_dsdm_conv3_dsdmguidee0200_ipc10_seed0/agents/agent_0/packets/dsdm_packet.pt
+    best_manifest: outputs/cifar100_fullclass_dsdm_conv3_dsdmguidee0200_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json
+  convnet4w15:
+    packet_path: outputs/cifar100_fullclass_dsdm_conv4_dsdmguidee0200_ipc10_seed0/agents/agent_0/packets/dsdm_packet.pt
+    best_manifest: outputs/cifar100_fullclass_dsdm_conv4_dsdmguidee0200_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json
+  alexnet:
+    packet_path: outputs/cifar100_fullclass_dsdm_alexnet_historicale0020_ipc10_seed0/agents/agent_0/packets/dsdm_packet.pt
+    best_manifest: outputs/cifar100_fullclass_dsdm_alexnet_historicale0020_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json
+  resnet10_standard:
+    packet_path: outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery_pcbn_w960/agents/agent_0/packets/dsdm_packet.pt
+    best_manifest: outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery_pcbn_w960/agents/agent_0/synthetic/best_manifest.json
+  resnet18_standard:
+    packet_path: outputs/cifar100_fullclass_dsdm_resnet18_standard_modelbest_e0200_ipc10_seed0_recovery/agents/agent_0/packets/dsdm_packet.pt
+    best_manifest: outputs/cifar100_fullclass_dsdm_resnet18_standard_modelbest_e0200_ipc10_seed0_recovery/agents/agent_0/synthetic/best_manifest.json

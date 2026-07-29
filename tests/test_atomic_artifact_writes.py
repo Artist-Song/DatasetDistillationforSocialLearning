@@ -50,6 +50,9 @@ class AtomicArtifactWriteTest(unittest.TestCase):
                     "ipc": 10,
                     "pcbn_enabled": True,
                     "pcbn_weight": 1.5,
+                    "pcbn_layers": "all",
+                    "pcbn_normalize_layers": True,
+                    "pcbn_hook_count": 20,
                 },
             )()
             synset = type(
@@ -74,6 +77,8 @@ class AtomicArtifactWriteTest(unittest.TestCase):
             self.assertTrue(torch.equal(torch.load(history_500)["images"], torch.zeros(2, 3, 4, 4)))
             self.assertEqual(manifest["iteration"], 500)
             self.assertEqual(manifest["best_acc"], 13.0)
+            self.assertEqual(manifest["pcbn_hook_count"], 20)
+            self.assertTrue(manifest["pcbn_normalize_layers"])
 
     def test_finalize_dsdm_packet_records_completion_and_numerics(self):
         with tempfile.TemporaryDirectory() as tmpdir:

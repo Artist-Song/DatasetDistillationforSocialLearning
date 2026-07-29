@@ -1,6 +1,7 @@
 import argparse
 import copy
 import json
+import math
 from pathlib import Path
 
 try:
@@ -32,6 +33,8 @@ DSDM_DEFAULT_ARGS = {
     "lr": 0.01,
     "momentum": 0.9,
     "weight_decay": 5e-4,
+    "classifier_type": "linear",
+    "cosine_scale_init": 10.0,
     "seed": 0,
     "pretrained": False,
     "save_pretrain_dir": "./pre_trained_model",
@@ -73,6 +76,10 @@ DSDM_DEFAULT_ARGS = {
     "lr_img": 0.1,
     "mom_img": 0.5,
     "grad_clip_norm": 0.0,
+    "guide_model_mode": "eval",
+    "freeze_guide_parameters": True,
+    "official_dsdm_protocol": False,
+    "official_dsdm_commit": None,
     "reproduce": False,
     "slct_type": "DSDM",
     "repeat": 1,
@@ -97,6 +104,12 @@ DSDM_DEFAULT_ARGS = {
     "fast_cache_root": "external_baselines/outputs/fast_cache",
     "fast_commit": "6a218fcfdc93838634921399b0de6a36cdd29756",
     "fast_seed": 0,
+    "receiver_local_ce_source": "real",
+    "receiver_local_ce_real_fraction": None,
+    "receiver_optimizer_steps": None,
+    "receiver_self_packet_batch_size": 64,
+    "receiver_scheduler_unit": "epoch",
+    "receiver_scheduler_step_milestones": [],
 }
 
 
@@ -186,6 +199,163 @@ def _as_bool(value):
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "on"}
     return bool(value)
+
+
+def apply_classifier_overrides(args, classifier_cfg):
+    """Apply an opt-in classifier block while keeping linear as the default."""
+    if classifier_cfg is None:
+        return
+    if isinstance(classifier_cfg, str):
+        args.classifier_type = classifier_cfg
+        return
+    if not isinstance(classifier_cfg, dict):
+        raise TypeError(f"classifier config must be a mapping or string: {classifier_cfg!r}")
+    if "type" in classifier_cfg:
+        args.classifier_type = str(classifier_cfg["type"])
+    if "scale_init" in classifier_cfg:
+        args.cosine_scale_init = float(classifier_cfg["scale_init"])
+    elif "initial_scale" in classifier_cfg:
+        args.cosine_scale_init = float(classifier_cfg["initial_scale"])
+    if str(args.classifier_type).lower() == "cosine":
+        positive = classifier_cfg.get("positive", classifier_cfg.get("positive_parameterization"))
+        if positive is not None and str(positive).lower() != "softplus":
+            raise ValueError(f"cosine scale positive parameterization must be softplus: {positive}")
+        if "bias" in classifier_cfg and _as_bool(classifier_cfg["bias"]):
+            raise ValueError("cosine classifier must be bias-free")
+        if "scale_weight_decay" in classifier_cfg and float(classifier_cfg["scale_weight_decay"]) != 0.0:
+            raise ValueError("cosine classifier scale_weight_decay must be 0")
+
+
+def normalize_receiver_checkpoint_retention(value):
+    """Validate the opt-in receiver checkpoint retention policy."""
+    resolved = str(value).strip().lower()
+    if resolved not in {"all", "final_only"}:
+        raise ValueError(
+            "receiver checkpoint_retention must be 'all' or 'final_only': "
+            f"{value!r}"
+        )
+    return resolved
+
+
+def normalize_receiver_local_ce_source(value):
+    """Validate the opt-in source used for receiver-local classification CE."""
+    resolved = str(value).strip().lower()
+    allowed = {"real", "packet", "real_packet_50_50", "real_packet_mix"}
+    if resolved not in allowed:
+        raise ValueError(
+            "receiver.local_ce_source must be one of "
+            f"{sorted(allowed)}: {value!r}"
+        )
+    return resolved
+
+
+def normalize_receiver_scheduler_unit(value):
+    """Validate whether the receiver scheduler advances per epoch or optimizer step."""
+    resolved = str(value).strip().lower()
+    if resolved not in {"epoch", "optimizer_step"}:
+        raise ValueError(
+            "receiver.scheduler_unit must be 'epoch' or 'optimizer_step': "
+            f"{value!r}"
+        )
+    return resolved
+
+
+def _positive_config_int(value, field_name):
+    """Require a positive YAML integer without accepting bools or lossy casts."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{field_name} must be a positive integer: {value!r}")
+    return int(value)
+
+
+def apply_receiver_training_overrides(args, receiver):
+    """Parse the opt-in fixed-step/local-CE receiver controls."""
+    if not isinstance(receiver, dict):
+        raise TypeError(f"social_learning.receiver must be a mapping: {receiver!r}")
+
+    if "local_ce_source" in receiver:
+        args.receiver_local_ce_source = normalize_receiver_local_ce_source(
+            receiver["local_ce_source"]
+        )
+    has_real_fraction = "local_ce_real_fraction" in receiver
+    local_ce_source = str(getattr(args, "receiver_local_ce_source", "real"))
+    if local_ce_source == "real_packet_mix":
+        if not has_real_fraction:
+            raise ValueError(
+                "receiver.local_ce_source='real_packet_mix' requires "
+                "receiver.local_ce_real_fraction"
+            )
+        value = receiver["local_ce_real_fraction"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("receiver.local_ce_real_fraction must be numeric")
+        value = float(value)
+        if not math.isfinite(value) or not 0.0 < value < 1.0:
+            raise ValueError(
+                "receiver.local_ce_real_fraction must be finite and strictly between 0 and 1"
+            )
+        args.receiver_local_ce_real_fraction = value
+    elif has_real_fraction:
+        raise ValueError(
+            "receiver.local_ce_real_fraction is only valid when "
+            "receiver.local_ce_source='real_packet_mix'"
+        )
+    if "optimizer_steps" in receiver:
+        args.receiver_optimizer_steps = _positive_config_int(
+            receiver["optimizer_steps"],
+            "receiver.optimizer_steps",
+        )
+    if "self_packet_batch_size" in receiver:
+        args.receiver_self_packet_batch_size = _positive_config_int(
+            receiver["self_packet_batch_size"],
+            "receiver.self_packet_batch_size",
+        )
+    if "packet_raw_per_class" in receiver:
+        args.receiver_packet_raw_per_class = _positive_config_int(
+            receiver["packet_raw_per_class"],
+            "receiver.packet_raw_per_class",
+        )
+    if "scheduler_unit" in receiver:
+        args.receiver_scheduler_unit = normalize_receiver_scheduler_unit(
+            receiver["scheduler_unit"]
+        )
+
+    has_step_milestones = "scheduler_step_milestones" in receiver
+    scheduler_unit = str(getattr(args, "receiver_scheduler_unit", "epoch"))
+    if scheduler_unit == "optimizer_step":
+        optimizer_steps = getattr(args, "receiver_optimizer_steps", None)
+        if optimizer_steps is None:
+            raise ValueError(
+                "receiver.scheduler_unit='optimizer_step' requires "
+                "receiver.optimizer_steps"
+            )
+        if not has_step_milestones:
+            raise ValueError(
+                "receiver.scheduler_unit='optimizer_step' requires explicit "
+                "receiver.scheduler_step_milestones"
+            )
+        raw_milestones = receiver["scheduler_step_milestones"]
+        if not isinstance(raw_milestones, (list, tuple)) or not raw_milestones:
+            raise ValueError(
+                "receiver.scheduler_step_milestones must be a non-empty sequence"
+            )
+        milestones = [
+            _positive_config_int(value, "receiver.scheduler_step_milestones entry")
+            for value in raw_milestones
+        ]
+        if any(current <= previous for previous, current in zip(milestones, milestones[1:])):
+            raise ValueError(
+                "receiver.scheduler_step_milestones must be strictly increasing"
+            )
+        if any(value >= optimizer_steps for value in milestones):
+            raise ValueError(
+                "receiver.scheduler_step_milestones entries must be smaller than "
+                "receiver.optimizer_steps"
+            )
+        args.receiver_scheduler_step_milestones = milestones
+    elif has_step_milestones:
+        raise ValueError(
+            "receiver.scheduler_step_milestones is only valid when "
+            "receiver.scheduler_unit='optimizer_step'"
+        )
 
 
 def apply_pcbn_overrides(args, pcbn_cfg):
@@ -286,7 +456,9 @@ def _apply_runtime_rules(args):
     """补齐 DSDM 原参数脚本中的运行和增强派生字段。"""
     if args.factor > 1:
         args.init = "mix"
-    if args.ipc > 0 and args.match == "semantic":
+    if args.ipc > 0 and (
+        args.match == "semantic" or bool(getattr(args, "official_dsdm_protocol", False))
+    ):
         f_list = [int(s) for s in args.f_idx.split(",")]
         if len(f_list) == 1:
             f_list.append(-1)
@@ -311,6 +483,8 @@ def _apply_config_overrides(args, cfg):
     distill = cfg.get("distillation", {})
     evaluation = cfg.get("evaluation", {})
     runtime = cfg.get("runtime", {})
+    communication = cfg.get("communication", {})
+    receiver = cfg.get("social_learning", {}).get("receiver", {})
     fast_cfg = cfg.get("selection", {}).get("fast", {})
     pcbn_cfg = {}
     if isinstance(cfg.get("pcbn"), dict):
@@ -343,6 +517,7 @@ def _apply_config_overrides(args, cfg):
     args.depth = model_cfg.get("depth", args.depth)
     args.width = model_cfg.get("width", args.width)
     args.norm_type = model_cfg.get("norm_type", args.norm_type)
+    apply_classifier_overrides(args, model_cfg.get("classifier"))
 
     for key in [
         "ipc",
@@ -359,6 +534,10 @@ def _apply_config_overrides(args, cfg):
         "lr_img",
         "mom_img",
         "grad_clip_norm",
+        "guide_model_mode",
+        "freeze_guide_parameters",
+        "official_dsdm_protocol",
+        "official_dsdm_commit",
         "batch_real",
         "batch_syn_max",
         "smooth_iter",
@@ -366,6 +545,15 @@ def _apply_config_overrides(args, cfg):
         "h_p_weight",
         "smooth_factor",
         "load_memory",
+        "mixup",
+        "mixup_net",
+        "beta",
+        "mix_p",
+        "dsa",
+        "dsa_strategy",
+        "bias",
+        "fc",
+        "reproduce",
     ]:
         if key in distill:
             setattr(args, key, distill[key])
@@ -379,6 +567,29 @@ def _apply_config_overrides(args, cfg):
     args.workers = runtime.get("workers", args.workers)
     args.device = runtime.get("device", args.device)
     args.gpu_id = runtime.get("gpu_id", args.gpu_id)
+    args.communication_protocol = str(communication.get("protocol", "none"))
+    args.receiver_protocol = str(receiver.get("protocol", communication.get("receiver_protocol", "legacy")))
+    args.strict_packet_validation = _as_bool(communication.get("strict_packet_validation", False))
+    args.packet_source = str(communication.get("packet_source", "sender_local"))
+    args.use_sender_logits = _as_bool(communication.get("use_sender_logits", False))
+    args.dkp_variant = str(receiver.get("dkp_variant", communication.get("dkp_variant", "legacy")))
+    args.receiver_local_batch_size = int(receiver.get("local_batch_size", 64))
+    args.receiver_external_batch_size = int(receiver.get("external_batch_size", 64))
+    args.lambda_sc = float(receiver.get("lambda_sc", 0.0))
+    args.supcon_temperature = float(receiver.get("supcon_temperature", 0.07))
+    args.prototype_decoded_per_class = int(receiver.get("prototype_decoded_per_class", 40))
+    apply_receiver_training_overrides(args, receiver)
+    if "loss_switches" in receiver:
+        loss_switches = receiver["loss_switches"]
+        if not isinstance(loss_switches, dict) or set(loss_switches) != {"fr", "kd", "supcon"}:
+            raise ValueError("receiver.loss_switches must contain exactly fr/kd/supcon")
+        if any(not isinstance(value, bool) for value in loss_switches.values()):
+            raise ValueError("receiver.loss_switches values must be booleans")
+        args.dkp_loss_switches = dict(loss_switches)
+    if "checkpoint_retention" in receiver:
+        args.receiver_checkpoint_retention = normalize_receiver_checkpoint_retention(
+            receiver["checkpoint_retention"]
+        )
     args.fast_repo_path = fast_cfg.get("repo_path", args.fast_repo_path)
     args.fast_cache_root = fast_cfg.get("cache_root", args.fast_cache_root)
     args.fast_commit = fast_cfg.get("commit", args.fast_commit)

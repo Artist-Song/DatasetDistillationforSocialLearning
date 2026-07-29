@@ -1,0 +1,186 @@
+{
+  "aggregate": {
+    "base_dsdm_loss_mean": 30.286845842997234,
+    "base_dsdm_loss_median": 29.104493141174316,
+    "raw_normalized_pcbn_loss_mean": 0.002559536910363628,
+    "raw_normalized_pcbn_loss_median": 0.0015645137755200267,
+    "sample_count": 12
+  },
+  "candidate_weights": {
+    "0.050": {
+      "target_total_loss_share": 0.05,
+      "two_significant_digit_weight": 620.0,
+      "unrounded_weight": 622.7862984113104
+    },
+    "0.075": {
+      "target_total_loss_share": 0.075,
+      "two_significant_digit_weight": 960.0,
+      "unrounded_weight": 959.4275407958024
+    },
+    "0.100": {
+      "target_total_loss_share": 0.1,
+      "two_significant_digit_weight": 1300.0,
+      "unrounded_weight": 1314.7710744238777
+    }
+  },
+  "device": "cuda",
+  "guide_evidence": [
+    {
+      "mapped_file_sha256": "f4e0c2665a18aa24a26f8289ee4873630aef1b550acf9435d5f5e8a2fa819a37",
+      "model_idx": 0,
+      "path": "outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery/agents/agent_0/checkpoints/dsdm_pretrained/cifar100_model_0.pth",
+      "source_file_sha256": "1f88be3a7a7985188f7dbb6c6eb0033553edde1d2706a2db2cdf88c32dfc32cd",
+      "state_dict_exact_match": true
+    },
+    {
+      "mapped_file_sha256": "acca8b1487feebdf1ae24da8469d14ea9410d14afa7487a423c48d68d47ffa1b",
+      "model_idx": 5,
+      "path": "outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery/agents/agent_0/checkpoints/dsdm_pretrained/cifar100_model_5.pth",
+      "source_file_sha256": "25f08b3cedf506948a2ce8b1834865877c8f4757bf8d2613c911e3f76da7a30f",
+      "state_dict_exact_match": true
+    }
+  ],
+  "protocol": {
+    "backbone": "resnet10_standard",
+    "class_ids": [
+      0,
+      99
+    ],
+    "dataset": "cifar100",
+    "factor": 2,
+    "feature_index": 5,
+    "feature_shape": [
+      2,
+      512
+    ],
+    "initialization": "mix",
+    "parameters": 4949412,
+    "pcbn_hook_count": 12,
+    "pcbn_layers": "all",
+    "pcbn_normalize_layers": true,
+    "raw_ipc": 10,
+    "sampled_classes": [
+      0,
+      20,
+      40,
+      60,
+      80,
+      99
+    ],
+    "sampled_guides": [
+      0,
+      5
+    ]
+  },
+  "pure_best_accuracy": 38.86,
+  "pure_best_iteration": 3000,
+  "pure_config": "configs/fullclass_dsdm/fullclass_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery.yaml",
+  "pure_run": "outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery",
+  "purpose": "initial-loss-scale calibration; not an accuracy hyperparameter sweep",
+  "samples": [
+    {
+      "base_dsdm_loss": 12.08084487915039,
+      "class_id": 0,
+      "guide_index": 0,
+      "raw_normalized_pcbn_loss": 0.002717577386647463,
+      "raw_pcbn_to_base_ratio": 0.00022494928242457342,
+      "sample_seed": 0
+    },
+    {
+      "base_dsdm_loss": 38.3153190612793,
+      "class_id": 20,
+      "guide_index": 0,
+      "raw_normalized_pcbn_loss": 0.012936841696500778,
+      "raw_pcbn_to_base_ratio": 0.00033764149727711636,
+      "sample_seed": 20
+    },
+    {
+      "base_dsdm_loss": 18.024721145629883,
+      "class_id": 40,
+      "guide_index": 0,
+      "raw_normalized_pcbn_loss": 0.0009522739564999938,
+      "raw_pcbn_to_base_ratio": 5.283155000325061e-05,
+      "sample_seed": 40
+    },
+    {
+      "base_dsdm_loss": 21.2903995513916,
+      "class_id": 60,
+      "guide_index": 0,
+      "raw_normalized_pcbn_loss": 0.0003823312872555107,
+      "raw_pcbn_to_base_ratio": 1.795791978129036e-05,
+      "sample_seed": 60
+    },
+    {
+      "base_dsdm_loss": 36.91858673095703,
+      "class_id": 80,
+      "guide_index": 0,
+      "raw_normalized_pcbn_loss": 0.0005248780362308025,
+      "raw_pcbn_to_base_ratio": 1.421717575636992e-05,
+      "sample_seed": 80
+    },
+    {
+      "base_dsdm_loss": 45.59413528442383,
+      "class_id": 99,
+      "guide_index": 0,
+      "raw_normalized_pcbn_loss": 0.004998311400413513,
+      "raw_pcbn_to_base_ratio": 0.00010962619137819397,
+      "sample_seed": 99
+    },
+    {
+      "base_dsdm_loss": 15.330509185791016,
+      "class_id": 0,
+      "guide_index": 5,
+      "raw_normalized_pcbn_loss": 0.0017103457357734442,
+      "raw_pcbn_to_base_ratio": 0.00011156483552148856,
+      "sample_seed": 50000
+    },
+    {
+      "base_dsdm_loss": 40.605865478515625,
+      "class_id": 20,
+      "guide_index": 5,
+      "raw_normalized_pcbn_loss": 0.00233805482275784,
+      "raw_pcbn_to_base_ratio": 5.757923874310459e-05,
+      "sample_seed": 50020
+    },
+    {
+      "base_dsdm_loss": 19.005748748779297,
+      "class_id": 40,
+      "guide_index": 5,
+      "raw_normalized_pcbn_loss": 0.002140951342880726,
+      "raw_pcbn_to_base_ratio": 0.00011264756633269895,
+      "sample_seed": 50040
+    },
+    {
+      "base_dsdm_loss": 18.09869384765625,
+      "class_id": 60,
+      "guide_index": 5,
+      "raw_normalized_pcbn_loss": 0.0002475003129802644,
+      "raw_pcbn_to_base_ratio": 1.367503727415751e-05,
+      "sample_seed": 50060
+    },
+    {
+      "base_dsdm_loss": 47.291481018066406,
+      "class_id": 80,
+      "guide_index": 5,
+      "raw_normalized_pcbn_loss": 0.00034669513115659356,
+      "raw_pcbn_to_base_ratio": 7.331027146816321e-06,
+      "sample_seed": 50080
+    },
+    {
+      "base_dsdm_loss": 50.88584518432617,
+      "class_id": 99,
+      "guide_index": 5,
+      "raw_normalized_pcbn_loss": 0.0014186818152666092,
+      "raw_pcbn_to_base_ratio": 2.787969444405712e-05,
+      "sample_seed": 50099
+    }
+  ],
+  "selection": {
+    "realized_mean_total_loss_share": 0.0750413919534954,
+    "rule": "two-significant-digit weight targeting 7.5% of initial total loss",
+    "selected_weight": 960.0,
+    "target_total_loss_share": 0.075,
+    "weighted_pcbn_loss_mean": 2.457155433949083
+  },
+  "status": "passed"
+}

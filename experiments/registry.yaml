@@ -1,5 +1,5 @@
 version: 1
-updated_at: '2026-07-19'
+updated_at: '2026-07-28'
 selection_policy:
   primary: global
   near_tie_threshold: 0.5
@@ -392,6 +392,80 @@ experiments:
       paths:
         - configs/tinyimagenet_r18_all200_dsdm_ipc10_seed0.yaml
         - configs/tinyimagenet_r18_all200_dsdm_pcbn_ipc10_seed0.yaml
+
+  - id: iclr2027_dkp_first_round_seed0_ipc10
+    title: ICLR 2027 DKP-SL 5-agent seed0 first-round diagnostic
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    protocol: dkp_sl_iclr2027_cifar100_5x20_ipc10_v1
+    comparability_group: cifar100_5agent20cls_iclr2027_dkp_seed0_ipc10
+    description: Complete five-receiver cosine-expert, CE-only and full DKP-SL communication validation using backbone-specific full-class pool slices; diagnostic only, not sender-local DSDM evidence.
+    source:
+      type: evidence
+      paths:
+        - configs/iclr2027/cifar100_5agent20cls_dkp_cosine_experts_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ce_only_ipc10_seed0_v2.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2.yaml
+        - outputs/cifar100_5agent20cls_dkp_cosine_experts_seed0_v1/metrics/cosine_expert_preflight.json
+        - outputs/cifar100_5agent20cls_dkp_ce_only_ipc10_seed0_v2/metrics/packet_integrity_dsdm.json
+        - outputs/cifar100_5agent20cls_dkp_ce_only_ipc10_seed0_v2/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2/metrics/packet_integrity_dsdm.json
+        - outputs/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2/metrics/communication_preflight.json
+        - outputs/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2/metrics/first_round_seed0_summary.json
+        - outputs/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2/metrics/final_receiver_checkpoint_audit.json
+
+  - id: iclr2027_dkp_matched_linear_head_seed0_ipc10
+    title: ICLR 2027 DKP-SL matched-linear head diagnostic
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    protocol: dkp_sl_iclr2027_cifar100_5x20_ipc10_matched_linear_v1
+    comparability_group: cifar100_5agent20cls_iclr2027_dkp_classifier_head_seed0_ipc10
+    description: Complete five-receiver matched-linear expert, CE-only and full DKP-SL end-to-end classifier diagnostic; uses separately trained linear experts and norm-matched linear prototype imprinting, and is not a formal result.
+    source:
+      type: evidence
+      paths:
+        - configs/iclr2027/cifar100_5agent20cls_dkp_linear_experts_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_linear_ce_only_ipc10_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_linear_full_ipc10_seed0_v1.yaml
+        - outputs/cifar100_5agent20cls_dkp_linear_experts_seed0_v1/metrics/linear_expert_preflight.json
+        - outputs/cifar100_5agent20cls_dkp_linear_ce_only_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_linear_full_ipc10_seed0_v1/metrics/linear_communication_preflight.json
+        - outputs/cifar100_5agent20cls_dkp_linear_full_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_linear_full_ipc10_seed0_v1/metrics/linear_head_seed0_summary.json
+        - outputs/cifar100_5agent20cls_dkp_linear_full_ipc10_seed0_v1/metrics/linear_final_receiver_checkpoint_audit.json
+
+  - id: iclr2027_dkp_loss_component_matrix_seed0_ipc10
+    title: ICLR 2027 DKP-SL fixed 2^3 loss-component diagnostic
+    role: diagnostic
+    status: complete
+    paper_eligible: false
+    protocol: dkp_sl_iclr2027_cifar100_5x20_ipc10_loss_matrix_v1
+    comparability_group: cifar100_5agent20cls_iclr2027_dkp_seed0_ipc10
+    description: Complete fixed FR/KD/SupCon binary matrix over eight conditions and five receivers; the six new conditions use final-only checkpoint retention, and the matrix is diagnostic rather than test-selected hyperparameter evidence.
+    source:
+      type: evidence
+      paths:
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ce_only_ipc10_seed0_v2.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ablation_fr0_kd0_sc1_ipc10_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ablation_fr0_kd1_sc0_ipc10_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ablation_fr0_kd1_sc1_ipc10_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ablation_fr1_kd0_sc0_ipc10_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ablation_fr1_kd0_sc1_ipc10_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_ablation_fr1_kd1_sc0_ipc10_seed0_v1.yaml
+        - configs/iclr2027/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2.yaml
+        - outputs/cifar100_5agent20cls_dkp_ce_only_ipc10_seed0_v2/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_ablation_fr0_kd0_sc1_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_ablation_fr0_kd1_sc0_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_ablation_fr0_kd1_sc1_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_ablation_fr1_kd0_sc0_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_ablation_fr1_kd0_sc1_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_ablation_fr1_kd1_sc0_ipc10_seed0_v1/metrics/social_results.csv
+        - outputs/cifar100_5agent20cls_dkp_sl_full_ipc10_seed0_v2/metrics/social_results.csv
+        - outputs/diagnostics/iclr2027_cifar100_5agent20cls_ipc10_seed0_loss_ablation_v1.json
+        - outputs/diagnostics/iclr2027_cifar100_5agent20cls_ipc10_seed0_loss_ablation_final_checkpoint_audit_v1.json
 
 superseded_sources:
   - id: masc_official_flow_old

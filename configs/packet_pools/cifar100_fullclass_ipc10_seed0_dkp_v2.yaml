@@ -1,0 +1,54 @@
+schema_version: 2
+protocol: backbone_specific_fullclass_pool_slice_v2_dkp
+strict_validation: true
+dataset: cifar100
+num_classes: 100
+ipc: 10
+factor: 2
+decode_type: single
+sources:
+  convnet3w1:
+    source_model_id: convnet3w1
+    packet_path: outputs/cifar100_fullclass_dsdm_conv3_dsdmguidee0200_ipc10_seed0/agents/agent_0/packets/dsdm_packet.pt
+    expected_packet_sha256: 07db12b9462ee6726b01ad8f78a469f9d887d742f06d75d4bbc44240a9438bf5
+    best_manifest: outputs/cifar100_fullclass_dsdm_conv3_dsdmguidee0200_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json
+    expected_best_iteration: 10000
+    expected_best_snapshot: outputs/cifar100_fullclass_dsdm_conv3_dsdmguidee0200_ipc10_seed0/agents/agent_0/synthetic/history/best_iter_10000.pt
+    expected_best_snapshot_sha256: 0b8ee986473dd11ee176fa87b98a183c77123eedd898a3dec06d993011aeedcf
+    expected_completed_iterations: 10000
+  convnet4w15:
+    source_model_id: convnet4w15
+    packet_path: outputs/cifar100_fullclass_dsdm_conv4_dsdmguidee0200_ipc10_seed0/agents/agent_0/packets/dsdm_packet.pt
+    expected_packet_sha256: 294e2eb86dcc393c2ee7f476d12ae2714878c04fa2540c9ddf0440c1104f25d0
+    best_manifest: outputs/cifar100_fullclass_dsdm_conv4_dsdmguidee0200_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json
+    expected_best_iteration: 9500
+    expected_best_snapshot: outputs/cifar100_fullclass_dsdm_conv4_dsdmguidee0200_ipc10_seed0/agents/agent_0/synthetic/history/best_iter_09500.pt
+    expected_best_snapshot_sha256: dd8ae05e0eecedb602574241e3050f1c4aaef23517db2e7dce6d41ecebf2a516
+    expected_completed_iterations: 10000
+  alexnet:
+    source_model_id: alexnet
+    packet_path: outputs/cifar100_fullclass_dsdm_alexnet_historicale0020_ipc10_seed0/agents/agent_0/packets/dsdm_packet.pt
+    expected_packet_sha256: 75e9ef5f0cb525b4e793a043c3737ba6e84b97b84e58bd00749e25ccb3f849ce
+    best_manifest: outputs/cifar100_fullclass_dsdm_alexnet_historicale0020_ipc10_seed0/agents/agent_0/synthetic/best_manifest.json
+    expected_best_iteration: 5500
+    expected_best_snapshot: outputs/cifar100_fullclass_dsdm_alexnet_historicale0020_ipc10_seed0/agents/agent_0/synthetic/history/best_iter_05500.pt
+    expected_best_snapshot_sha256: b48be3b18f2dadc79722c50a693f38681d77314b2a729518ce0b228a899184b2
+    expected_completed_iterations: 10000
+  resnet10_standard:
+    source_model_id: resnet10_standard
+    packet_path: outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery_pcbn_w960/agents/agent_0/packets/dsdm_packet.pt
+    expected_packet_sha256: e2339df5d22531fd4d54ce2040f8d4f4b550e99a0cef53b1c87b7bcdd97e9959
+    best_manifest: outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery_pcbn_w960/agents/agent_0/synthetic/best_manifest.json
+    expected_best_iteration: 5000
+    expected_best_snapshot: outputs/cifar100_fullclass_dsdm_resnet10_standard_modelbest_e0200_ipc10_seed0_recovery_pcbn_w960/agents/agent_0/synthetic/history/best_iter_05000.pt
+    expected_best_snapshot_sha256: 923853f623f71eee06ede699c200e5962a074c97bad24495a642ebb85f1a3652
+    expected_completed_iterations: 10000
+  resnet18_standard:
+    source_model_id: resnet18_standard
+    packet_path: outputs/cifar100_fullclass_dsdm_resnet18_standard_modelbest_e0200_ipc10_seed0_recovery/agents/agent_0/packets/dsdm_packet.pt
+    expected_packet_sha256: 5a79190b64f552e00490596cb3792a196cf00e56f74ecda515c7d9d6e3e7a3ce
+    best_manifest: outputs/cifar100_fullclass_dsdm_resnet18_standard_modelbest_e0200_ipc10_seed0_recovery/agents/agent_0/synthetic/best_manifest.json
+    expected_best_iteration: 7500
+    expected_best_snapshot: outputs/cifar100_fullclass_dsdm_resnet18_standard_modelbest_e0200_ipc10_seed0_recovery/agents/agent_0/synthetic/history/best_iter_07500.pt
+    expected_best_snapshot_sha256: 8a46585b8ac01c7d357e5b34f060324ce1e911a117df7fc870b82d72539fe190
+    expected_completed_iterations: 10000

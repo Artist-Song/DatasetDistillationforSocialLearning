@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 
+from .cosine_classifier import build_classifier
+
 
 class ConvNet(nn.Module):
     def __init__(self,
@@ -11,7 +13,9 @@ class ConvNet(nn.Module):
                  channel=3,
                  net_act='relu',
                  net_pooling='avgpooling',
-                 im_size=(32, 32)):
+                 im_size=(32, 32),
+                 classifier_type='linear',
+                 cosine_scale_init=10.0):
         # print(f"Define Convnet (depth {net_depth}, width {net_width}, norm {net_norm})")
         super(ConvNet, self).__init__()
         if net_act == 'sigmoid':
@@ -38,7 +42,12 @@ class ConvNet(nn.Module):
         self.layers, shape_feat = self._make_layers(channel, net_width, net_depth, net_norm,
                                                     net_pooling, im_size)
         num_feat = shape_feat[0] * shape_feat[1] * shape_feat[2]
-        self.classifier = nn.Linear(num_feat, num_classes)
+        self.classifier = build_classifier(
+            num_feat,
+            num_classes,
+            classifier_type=classifier_type,
+            scale_init=cosine_scale_init,
+        )
 
     def forward(self, x, return_features=False):
         for d in range(self.depth):

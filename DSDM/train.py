@@ -39,6 +39,8 @@ def define_model(args, nclass, logger=None, size=None):
     """
     if size == None:
         size = args.size
+    classifier_type = str(getattr(args, 'classifier_type', 'linear'))
+    cosine_scale_init = float(getattr(args, 'cosine_scale_init', 10.0))
 
     if args.net_type in {'resnet', 'resnet_cifar_standard'}:
         cifar_base_width = 64 if args.net_type == 'resnet_cifar_standard' else 32
@@ -48,7 +50,9 @@ def define_model(args, nclass, logger=None, size=None):
                           norm_type=args.norm_type,
                           size=size,
                           nch=args.nch,
-                          cifar_base_width=cifar_base_width)
+                          cifar_base_width=cifar_base_width,
+                          classifier_type=classifier_type,
+                          cosine_scale_init=cosine_scale_init)
     elif args.net_type == 'resnet_ap':
         model = RNAP.ResNetAP(args.dataset,
                               args.depth,
@@ -68,10 +72,17 @@ def define_model(args, nclass, logger=None, size=None):
                            net_depth=args.depth,
                            net_width=width,
                            channel=args.nch,
-                           im_size=(args.size, args.size))
+                           im_size=(args.size, args.size),
+                           classifier_type=classifier_type,
+                           cosine_scale_init=cosine_scale_init)
     elif args.net_type == 'alexnet':
         # AlexNetCIFAR：32x32输入，内部写死BatchNorm，输出维度100
-        model = AN.alexnet_cifar(nclass, nch=args.nch)
+        model = AN.alexnet_cifar(
+            nclass,
+            nch=args.nch,
+            classifier_type=classifier_type,
+            cosine_scale_init=cosine_scale_init,
+        )
     elif args.net_type == 'vgg':
         # VGG11-CIFAR：32x32输入，AdaptiveAvgPool，内部写死BatchNorm，输出维度100
         model = VN.vgg_cifar(nclass, nch=args.nch)

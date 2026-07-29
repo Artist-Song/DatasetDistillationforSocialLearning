@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset, Subset
 from torchvision import datasets, transforms
 
-from config_adapter import apply_pcbn_overrides, build_dsdm_args_from_config
+from config_adapter import apply_classifier_overrides, apply_pcbn_overrides, build_dsdm_args_from_config
 from tiny_imagenet_data import TinyImageNetDataset, load_tiny_imagenet_leaked_validation_paths
 
 
@@ -189,7 +189,10 @@ def _refresh_model_metadata(args):
 
 def _refresh_feature_indices(args):
     """同步 DSDM 特征层索引，避免 per-agent f_idx 更新后 idx_from 仍沿用旧值。"""
-    if getattr(args, "ipc", 0) > 0 and getattr(args, "match", "") == "semantic":
+    if getattr(args, "ipc", 0) > 0 and (
+        getattr(args, "match", "") == "semantic"
+        or bool(getattr(args, "official_dsdm_protocol", False))
+    ):
         f_list = [int(s) for s in str(args.f_idx).split(",")]
         if len(f_list) == 1:
             f_list.append(-1)
@@ -221,6 +224,34 @@ def build_agent_args(base_cfg, config_path, agent_id):
     guide_cfg = model_cfg.get("guide_training", {})
     expert_cfg = model_cfg.get("expert_training", {})
     args.separate_expert = bool(expert_cfg.get("separate", False))
+    args.classifier_type = "linear"
+    args.cosine_scale_init = 10.0
+    apply_classifier_overrides(args, model_cfg.get("classifier"))
+    apply_classifier_overrides(args, expert_cfg.get("classifier"))
+    if "classifier_type" in expert_cfg:
+        args.classifier_type = str(expert_cfg["classifier_type"])
+    if "cosine_scale_init" in expert_cfg:
+        args.cosine_scale_init = float(expert_cfg["cosine_scale_init"])
+    args.expert_classifier_type = str(args.classifier_type).lower()
+    args.expert_cosine_scale_init = float(args.cosine_scale_init)
+    args.expert_mask_nonlocal_classes = bool(
+        expert_cfg.get(
+            "masked_local_ce",
+            expert_cfg.get("mask_nonlocal_classes", args.expert_classifier_type == "cosine"),
+        )
+    )
+    guide_classifier = guide_cfg.get("classifier", "linear")
+    args.guide_classifier_type = "linear"
+    args.guide_cosine_scale_init = 10.0
+    if isinstance(guide_classifier, str):
+        args.guide_classifier_type = str(guide_classifier).lower()
+    elif isinstance(guide_classifier, dict):
+        args.guide_classifier_type = str(guide_classifier.get("type", "linear")).lower()
+        args.guide_cosine_scale_init = float(
+            guide_classifier.get("scale_init", guide_classifier.get("initial_scale", 10.0))
+        )
+    else:
+        raise TypeError(f"guide classifier config must be a mapping or string: {guide_classifier!r}")
 
     if guide_cfg:
         args.pretrained_model_number = int(guide_cfg.get("num_models", args.pretrained_model_number))
@@ -240,6 +271,12 @@ def build_agent_args(base_cfg, config_path, agent_id):
         args.guide_scheduler = str(guide_cfg.get("scheduler", "none"))
         args.guide_scheduler_milestones = [int(v) for v in guide_cfg.get("scheduler_milestones", [])]
         args.guide_scheduler_gamma = float(guide_cfg.get("scheduler_gamma", 0.1))
+        args.guide_training_style = str(guide_cfg.get("training_style", "plain"))
+        args.guide_pool_design = str(guide_cfg.get("pool_design", "independent_final_models"))
+        args.guide_trajectory_count = int(guide_cfg.get("trajectory_count", args.guide_model_number))
+        args.guide_trajectory_checkpoint_epochs = [
+            int(v) for v in guide_cfg.get("trajectory_checkpoint_epochs", [])
+        ]
         args.guide_source_root = guide_cfg.get("source_root")
     else:
         # Legacy runs trained one pool and then selected an expert from that pool.
@@ -256,6 +293,10 @@ def build_agent_args(base_cfg, config_path, agent_id):
         args.guide_scheduler = str(expert_cfg.get("scheduler", "none"))
         args.guide_scheduler_milestones = [int(v) for v in expert_cfg.get("scheduler_milestones", [])]
         args.guide_scheduler_gamma = float(expert_cfg.get("scheduler_gamma", 0.1))
+        args.guide_training_style = "plain"
+        args.guide_pool_design = "independent_final_models"
+        args.guide_trajectory_count = int(args.guide_model_number)
+        args.guide_trajectory_checkpoint_epochs = []
         args.guide_source_root = None
 
     if expert_cfg:
@@ -305,6 +346,7 @@ def build_agent_args(base_cfg, config_path, agent_id):
         args.pretrain_dir = str(distill_override["pretrain_dir"])
     args.save_pretrain_dir = str(get_agent_dir(args, agent_id) / "checkpoints")
     args.save_dir = str(get_agent_dir(args, agent_id) / "checkpoints")
+    args.guide_only = bool(base_cfg.get("fullclass_pool", {}).get("guide_only", False))
     return args
 
 
