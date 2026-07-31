@@ -35,9 +35,25 @@ FORBIDDEN_CURRENT_DOCS = [
     ".ipynb_checkpoints/AGENTS-checkpoint.md",
 ]
 
+SCALING_SOURCE_TYPES = {"scaling_pipeline", "scaling_average_rows", "scaling_json"}
+
 
 def fail(message: str, errors: list[str]) -> None:
     errors.append(message)
+
+
+def validate_seed_template(
+    entry: dict, source: dict, label: str, errors: list[str]
+) -> None:
+    paths = [
+        ROOT / source["path_template"].format(seed=seed)
+        for seed in source.get("expected_seeds", [])
+    ]
+    existing = [path.is_file() for path in paths]
+    if not existing or not any(existing):
+        fail(f"{entry['id']} has no existing {label} source", errors)
+    if entry.get("status") == "complete" and (not existing or not all(existing)):
+        fail(f"complete entry {entry['id']} has missing {label} source files", errors)
 
 
 def main() -> None:
@@ -49,6 +65,7 @@ def main() -> None:
         if (ROOT / relative).exists():
             fail(f"stale current-document duplicate remains: {relative}", errors)
 
+    registry: dict = {"experiments": []}
     registry_path = ROOT / "experiments" / "registry.yaml"
     if registry_path.is_file():
         registry = yaml.safe_load(registry_path.read_text(encoding="utf-8"))
@@ -75,6 +92,15 @@ def main() -> None:
                 for relative in source.get("paths", []):
                     if not (ROOT / relative).is_file():
                         fail(f"missing evidence source for {entry['id']}: {relative}", errors)
+            elif source_type in SCALING_SOURCE_TYPES:
+                validate_seed_template(entry, source, "metric", errors)
+                communication = entry.get("communication", {}).get("source")
+                if communication:
+                    communication = {
+                        **communication,
+                        "expected_seeds": source.get("expected_seeds", []),
+                    }
+                    validate_seed_template(entry, communication, "communication", errors)
             else:
                 fail(f"unknown source type for {entry.get('id')}: {source_type}", errors)
 
@@ -89,6 +115,18 @@ def main() -> None:
                 fail(f"complete result has missing seeds: {row['id']}", errors)
     else:
         fail("canonical_results.csv has not been generated", errors)
+
+    scaling_csv = ROOT / "experiments" / "generated" / "iclr2027_scaling_results.csv"
+    if scaling_csv.is_file():
+        with scaling_csv.open("r", encoding="utf-8", newline="") as handle:
+            scaling_rows = list(csv.DictReader(handle))
+        if not scaling_rows:
+            fail("iclr2027_scaling_results.csv is empty", errors)
+    elif any(
+        entry.get("table_section") == "scaling"
+        for entry in registry.get("experiments", [])
+    ):
+        fail("iclr2027_scaling_results.csv has not been generated", errors)
 
     agents_text = (ROOT / "AGENTS.md").read_text(encoding="utf-8") if (ROOT / "AGENTS.md").is_file() else ""
     if "当前实验结果快照" in agents_text:

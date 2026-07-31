@@ -29,18 +29,41 @@ enums:
   source_type:
     - pipeline
     - average_row
+    - scaling_pipeline
+    - scaling_average_rows
+    - scaling_json
     - evidence
+  communication_source_type:
+    - dkp_summary
+    - hard_label_audit
+    - desa_audit
+    - masc_audit
+    - fedre_summary
 
 source_types:
   pipeline:
     required: [path_template, expected_seeds, method, receiver_key, metrics]
-    description: One pipeline CSV per seed; aggregate four receivers within each seed first.
+    description: One pipeline CSV per seed; aggregate all expected receivers within each seed first.
   average_row:
     required: [path, average_key, average_value, metrics]
     description: A baseline CSV containing an explicit average row.
+  scaling_pipeline:
+    required: [path_template, expected_seeds, method, receiver_key, expected_receivers, metrics]
+    description: One 5/10/20-agent pipeline CSV per seed with exact receiver coverage.
+  scaling_average_rows:
+    required: [path_template, expected_seeds, average_key, average_value, metrics]
+    description: One external-baseline CSV with an explicit average row per seed.
+  scaling_json:
+    required: [path_template, expected_seeds, metrics]
+    description: One complete external-baseline JSON summary per seed.
   evidence:
     required: [paths]
     description: Important intermediate evidence not automatically placed in the main numeric table.
+
+communication:
+  required: [object, aux_kind, source]
+  source_required: [type, path_template]
+  description: Native communication objects, image incidence, and auxiliary bytes remain separately accounted.
 
 metric_keys:
   - global

@@ -1,0 +1,1568 @@
+{
+  "performance": [
+    {
+      "id": "iclr2027_ours_5agent_ipc10",
+      "title": "Ours",
+      "role": "main",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 10,
+      "agent_count": 5,
+      "ipc": 10,
+      "packet": "Distilled images",
+      "soft_labels": "Sender expert-class logits",
+      "protocol": "DKP-SL r02, cosine expert, prototype initialization, 3780 receiver steps",
+      "comparability_group": "iclr2027_5agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "Synthetic image packets + sender-local logits",
+        "aux_kind": "sender logits",
+        "source": {
+          "type": "dkp_summary",
+          "path_template": "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/scaling_seed_summary.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 39.18266666666667,
+      "global_std": 0.5227933519937792,
+      "new_mean": 33.71666666666667,
+      "new_std": 0.5334101507178922,
+      "expert_mean": 61.04666666666666,
+      "expert_std": 0.9057716170328056,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_ours_10agent_ipc10",
+      "title": "Ours",
+      "role": "main",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 10,
+      "agent_count": 10,
+      "ipc": 10,
+      "packet": "Distilled images",
+      "soft_labels": "Sender expert-class logits",
+      "protocol": "DKP-SL r02, cosine expert, prototype initialization, 3780 receiver steps",
+      "comparability_group": "iclr2027_10agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "Synthetic image packets + sender-local logits",
+        "aux_kind": "sender logits",
+        "source": {
+          "type": "dkp_summary",
+          "path_template": "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/scaling_seed_summary.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 34.02466666666666,
+      "global_std": 0.1653326612889558,
+      "new_mean": 31.38851851851852,
+      "new_std": 0.203282392593519,
+      "expert_mean": 57.75,
+      "expert_std": 0.17682382946499783,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_ours_20agent_ipc10",
+      "title": "Ours",
+      "role": "main",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 10,
+      "agent_count": 20,
+      "ipc": 10,
+      "packet": "Distilled images",
+      "soft_labels": "Sender expert-class logits",
+      "protocol": "DKP-SL r02, cosine expert, prototype initialization, 3780 receiver steps",
+      "comparability_group": "iclr2027_20agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "Synthetic image packets + sender-local logits",
+        "aux_kind": "sender logits",
+        "source": {
+          "type": "dkp_summary",
+          "path_template": "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/scaling_seed_summary.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 29.672166666666666,
+      "global_std": 0.21257521544672642,
+      "new_mean": 28.226491228070174,
+      "new_std": 0.22085050630975062,
+      "expert_mean": 57.13999999999999,
+      "expert_std": 0.0778888096369892,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_heuristic_5agent_ipc10",
+      "title": "Heuristic",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 20,
+      "agent_count": 5,
+      "ipc": 10,
+      "packet": "Random real images",
+      "soft_labels": "No",
+      "protocol": "Hard labels, r02 receiver, 3780 receiver steps",
+      "comparability_group": "iclr2027_5agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL_ABLATION",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "Random real image packets + hard labels",
+        "aux_kind": "none",
+        "source": {
+          "type": "hard_label_audit",
+          "path_template": "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 33.60466666666667,
+      "global_std": 0.5867340870350792,
+      "new_mean": 25.905833333333334,
+      "new_std": 0.7516380260618954,
+      "expert_mean": 64.39999999999999,
+      "expert_std": 0.08524474568363587,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_heuristic_10agent_ipc10",
+      "title": "Heuristic",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 20,
+      "agent_count": 10,
+      "ipc": 10,
+      "packet": "Random real images",
+      "soft_labels": "No",
+      "protocol": "Hard labels, r02 receiver, 3780 receiver steps",
+      "comparability_group": "iclr2027_10agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL_ABLATION",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "Random real image packets + hard labels",
+        "aux_kind": "none",
+        "source": {
+          "type": "hard_label_audit",
+          "path_template": "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 26.760999999999996,
+      "global_std": 0.44685866520261946,
+      "new_mean": 23.983703703703707,
+      "new_std": 0.5144987039086986,
+      "expert_mean": 51.75666666666666,
+      "expert_std": 0.8857890393441417,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_heuristic_20agent_ipc10",
+      "title": "Heuristic",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 20,
+      "agent_count": 20,
+      "ipc": 10,
+      "packet": "Random real images",
+      "soft_labels": "No",
+      "protocol": "Hard labels, r02 receiver, 3780 receiver steps",
+      "comparability_group": "iclr2027_20agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL_ABLATION",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "Random real image packets + hard labels",
+        "aux_kind": "none",
+        "source": {
+          "type": "hard_label_audit",
+          "path_template": "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 19.22,
+      "global_std": 0.6304460061469711,
+      "new_mean": 16.817192982456138,
+      "new_std": 0.6562359907780807,
+      "expert_mean": 64.87333333333333,
+      "expert_std": 0.20853989759489297,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_fast_5agent_ipc10",
+      "title": "FAST",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 30,
+      "agent_count": 5,
+      "ipc": 10,
+      "packet": "Selected real images",
+      "soft_labels": "No",
+      "protocol": "Official pixels/per-class/minmax selection, hard labels, r02 receiver",
+      "comparability_group": "iclr2027_5agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL_ABLATION",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "FAST-selected real image packets + hard labels",
+        "aux_kind": "none",
+        "source": {
+          "type": "hard_label_audit",
+          "path_template": "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 31.66933333333333,
+      "global_std": 0.29091273987610455,
+      "new_mean": 23.540000000000003,
+      "new_std": 0.4361335804544295,
+      "expert_mean": 64.18666666666667,
+      "expert_std": 0.3578019315518319,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_fast_10agent_ipc10",
+      "title": "FAST",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 30,
+      "agent_count": 10,
+      "ipc": 10,
+      "packet": "Selected real images",
+      "soft_labels": "No",
+      "protocol": "Official pixels/per-class/minmax selection, hard labels, r02 receiver",
+      "comparability_group": "iclr2027_10agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL_ABLATION",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "FAST-selected real image packets + hard labels",
+        "aux_kind": "none",
+        "source": {
+          "type": "hard_label_audit",
+          "path_template": "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 24.151,
+      "global_std": 0.1236149936968282,
+      "new_mean": 21.13592592592593,
+      "new_std": 0.14872388129329087,
+      "expert_mean": 51.28666666666667,
+      "expert_std": 0.21746008573733236,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_fast_20agent_ipc10",
+      "title": "FAST",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 30,
+      "agent_count": 20,
+      "ipc": 10,
+      "packet": "Selected real images",
+      "soft_labels": "No",
+      "protocol": "Official pixels/per-class/minmax selection, hard labels, r02 receiver",
+      "comparability_group": "iclr2027_20agent_ipc10_image_budget",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL_ABLATION",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "FAST-selected real image packets + hard labels",
+        "aux_kind": "none",
+        "source": {
+          "type": "hard_label_audit",
+          "path_template": "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 17.246,
+      "global_std": 0.05962801355067999,
+      "new_mean": 14.803508771929826,
+      "new_std": 0.0651021405501902,
+      "expert_mean": 63.653333333333336,
+      "expert_std": 0.8397354080634902,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_full_real_5agent",
+      "title": "Full Real",
+      "role": "oracle",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 35,
+      "agent_count": 5,
+      "ipc": 500,
+      "packet": "All real images",
+      "soft_labels": "No",
+      "protocol": "High-communication full-data oracle, r02 receiver, 3780 receiver steps",
+      "comparability_group": "iclr2027_5agent_full_data",
+      "caveat": "High-communication oracle; not IPC10 matched and not scheduled for 10/20 agents.",
+      "source": {
+        "type": "scaling_pipeline",
+        "path_template": "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed{seed}_v1/metrics/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "method": "DKP_SL_ABLATION",
+        "receiver_key": "receiver_agent",
+        "expected_receivers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "metrics": {
+          "global": "acc_global_after",
+          "new": "acc_new_after",
+          "expert": "acc_expert_after"
+        }
+      },
+      "communication": {
+        "object": "Full real-data image packets + hard labels",
+        "aux_kind": "none",
+        "source": {
+          "type": "hard_label_audit",
+          "path_template": "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed{seed}_v1/metrics/hard_label_complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 58.07066666666666,
+      "global_std": 1.280985384598727,
+      "new_mean": 54.44583333333333,
+      "new_std": 2.071052805271322,
+      "expert_mean": 72.57000000000001,
+      "expert_std": 1.8820379025584628,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed1_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed2_v1/metrics/social_results.csv",
+        "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed3_v1/metrics/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_desa_5agent_ipc10",
+      "title": "DeSA-CIL",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 40,
+      "agent_count": 5,
+      "ipc": 10,
+      "packet": "Synthetic anchors",
+      "soft_labels": "Iterative owner logits",
+      "protocol": "Owner-aware class-incremental adaptation, heterogeneous task backbones, 100 rounds",
+      "comparability_group": "iclr2027_5agent_desa_adapted",
+      "caveat": "Adapted DeSA-CIL protocol; synthetic anchors and iterative owner logits are both communicated.",
+      "source": {
+        "type": "scaling_average_rows",
+        "path_template": "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "average_key": "receiver",
+        "average_value": "avg",
+        "metrics": {
+          "global": "acc_global",
+          "new": "acc_new",
+          "expert": "acc_expert"
+        }
+      },
+      "communication": {
+        "object": "Synthetic anchors + iterative owner logits",
+        "aux_kind": "owner logits",
+        "source": {
+          "type": "desa_audit",
+          "path_template": "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1/complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 14.638,
+      "global_std": 0.8261735088143821,
+      "new_mean": 1.17,
+      "new_std": 0.12048513047951874,
+      "expert_mean": 68.51,
+      "expert_std": 3.6494109113663784,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed1_v1/social_results.csv",
+        "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed2_v1/social_results.csv",
+        "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed3_v1/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_desa_10agent_ipc10",
+      "title": "DeSA-CIL",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 40,
+      "agent_count": 10,
+      "ipc": 10,
+      "packet": "Synthetic anchors",
+      "soft_labels": "Iterative owner logits",
+      "protocol": "Owner-aware class-incremental adaptation, heterogeneous task backbones, 100 rounds",
+      "comparability_group": "iclr2027_10agent_desa_adapted",
+      "caveat": "Adapted DeSA-CIL protocol; synthetic anchors and iterative owner logits are both communicated.",
+      "source": {
+        "type": "scaling_average_rows",
+        "path_template": "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "average_key": "receiver",
+        "average_value": "avg",
+        "metrics": {
+          "global": "acc_global",
+          "new": "acc_new",
+          "expert": "acc_expert"
+        }
+      },
+      "communication": {
+        "object": "Synthetic anchors + iterative owner logits",
+        "aux_kind": "owner logits",
+        "source": {
+          "type": "desa_audit",
+          "path_template": "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1/complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 9.695333333333332,
+      "global_std": 0.06786424357167631,
+      "new_mean": 2.3085185185185186,
+      "new_std": 0.12640106439794285,
+      "expert_mean": 76.17666666666666,
+      "expert_std": 0.7759868269214153,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed1_v1/social_results.csv",
+        "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed2_v1/social_results.csv",
+        "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed3_v1/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_desa_20agent_ipc10",
+      "title": "DeSA-CIL",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 40,
+      "agent_count": 20,
+      "ipc": 10,
+      "packet": "Synthetic anchors",
+      "soft_labels": "Iterative owner logits",
+      "protocol": "Owner-aware class-incremental adaptation, heterogeneous task backbones, 100 rounds",
+      "comparability_group": "iclr2027_20agent_desa_adapted",
+      "caveat": "Adapted DeSA-CIL protocol; synthetic anchors and iterative owner logits are both communicated.",
+      "source": {
+        "type": "scaling_average_rows",
+        "path_template": "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "average_key": "receiver",
+        "average_value": "avg",
+        "metrics": {
+          "global": "acc_global",
+          "new": "acc_new",
+          "expert": "acc_expert"
+        }
+      },
+      "communication": {
+        "object": "Synthetic anchors + iterative owner logits",
+        "aux_kind": "owner logits",
+        "source": {
+          "type": "desa_audit",
+          "path_template": "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1/complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 6.385833333333333,
+      "global_std": 0.07330453980181256,
+      "new_mean": 2.2671929824561405,
+      "new_std": 0.026158594834548295,
+      "expert_mean": 84.63999999999999,
+      "expert_std": 1.1870411394162614,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed1_v1/social_results.csv",
+        "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed2_v1/social_results.csv",
+        "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed3_v1/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_masc_5agent_ipc10",
+      "title": "MASC-complete",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 50,
+      "agent_count": 5,
+      "ipc": 10,
+      "packet": "Real CC images",
+      "soft_labels": "Teacher KD",
+      "protocol": "Homogeneous official Netwider13, CC + RA + HFE, model interaction",
+      "comparability_group": "iclr2027_5agent_masc_adapted",
+      "caveat": "Homogeneous adapted MASC protocol; parameter interaction and the central CC image pool are both reported.",
+      "source": {
+        "type": "scaling_average_rows",
+        "path_template": "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "average_key": "agent_id",
+        "average_value": "avg",
+        "metrics": {
+          "global": "acc_global",
+          "new": "acc_new",
+          "expert": "acc_expert"
+        }
+      },
+      "communication": {
+        "object": "Central real CC pool + expert/student parameters",
+        "aux_kind": "model parameters",
+        "source": {
+          "type": "masc_audit",
+          "path_template": "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 8.963333333333333,
+      "global_std": 0.12283683848458925,
+      "new_mean": 1.955,
+      "new_std": 0.24869660230891782,
+      "expert_mean": 36.99666666666667,
+      "expert_std": 1.6037941125828943,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed1_v1_masc_homogeneous_10/social_results.csv",
+        "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed2_v1_masc_homogeneous_10/social_results.csv",
+        "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed3_v1_masc_homogeneous_10/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_masc_10agent_ipc10",
+      "title": "MASC-complete",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 50,
+      "agent_count": 10,
+      "ipc": 10,
+      "packet": "Real CC images",
+      "soft_labels": "Teacher KD",
+      "protocol": "Homogeneous official Netwider13, CC + RA + HFE, model interaction",
+      "comparability_group": "iclr2027_10agent_masc_adapted",
+      "caveat": "Homogeneous adapted MASC protocol; parameter interaction and the central CC image pool are both reported.",
+      "source": {
+        "type": "scaling_average_rows",
+        "path_template": "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "average_key": "agent_id",
+        "average_value": "avg",
+        "metrics": {
+          "global": "acc_global",
+          "new": "acc_new",
+          "expert": "acc_expert"
+        }
+      },
+      "communication": {
+        "object": "Central real CC pool + expert/student parameters",
+        "aux_kind": "model parameters",
+        "source": {
+          "type": "masc_audit",
+          "path_template": "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 6.242333333333334,
+      "global_std": 0.24169034366772285,
+      "new_mean": 2.105185185185185,
+      "new_std": 0.35816787260404365,
+      "expert_mean": 43.47666666666667,
+      "expert_std": 1.1477901472927123,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed1_v1_masc_homogeneous_10/social_results.csv",
+        "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed2_v1_masc_homogeneous_10/social_results.csv",
+        "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed3_v1_masc_homogeneous_10/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_masc_20agent_ipc10",
+      "title": "MASC-complete",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 50,
+      "agent_count": 20,
+      "ipc": 10,
+      "packet": "Real CC images",
+      "soft_labels": "Teacher KD",
+      "protocol": "Homogeneous official Netwider13, CC + RA + HFE, model interaction",
+      "comparability_group": "iclr2027_20agent_masc_adapted",
+      "caveat": "Homogeneous adapted MASC protocol; parameter interaction and the central CC image pool are both reported.",
+      "source": {
+        "type": "scaling_average_rows",
+        "path_template": "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/social_results.csv",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "average_key": "agent_id",
+        "average_value": "avg",
+        "metrics": {
+          "global": "acc_global",
+          "new": "acc_new",
+          "expert": "acc_expert"
+        }
+      },
+      "communication": {
+        "object": "Central real CC pool + expert/student parameters",
+        "aux_kind": "model parameters",
+        "source": {
+          "type": "masc_audit",
+          "path_template": "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/complete_audit.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 4.753833333333334,
+      "global_std": 0.07998992992176453,
+      "new_mean": 1.8005263157894735,
+      "new_std": 0.11611040054801333,
+      "expert_mean": 60.86666666666667,
+      "expert_std": 1.8626206150355957,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed1_v1_masc_homogeneous_10/social_results.csv",
+        "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed2_v1_masc_homogeneous_10/social_results.csv",
+        "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed3_v1_masc_homogeneous_10/social_results.csv"
+      ]
+    },
+    {
+      "id": "iclr2027_fedre_5agent",
+      "title": "FedRE",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 60,
+      "agent_count": 5,
+      "ipc": 0,
+      "packet": "No raw images",
+      "soft_labels": "Shared head / representations",
+      "protocol": "Official FedRE core, RAP, HtM10 first five models, round-100 checkpoint",
+      "comparability_group": "iclr2027_5agent_fedre_native",
+      "caveat": "Native heterogeneous federated protocol with random local initialization; no raw-image communication.",
+      "source": {
+        "type": "scaling_json",
+        "path_template": "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "metrics": {
+          "global": "client_mean_global",
+          "new": "client_mean_new",
+          "expert": "client_mean_expert"
+        }
+      },
+      "communication": {
+        "object": "Shared head + entangled representations + mixture metadata",
+        "aux_kind": "parameters/representations",
+        "note": "Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.",
+        "source": {
+          "type": "fedre_summary",
+          "path_template": "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 11.685333333333332,
+      "global_std": 0.022647050335283355,
+      "new_mean": 0.004166666666666667,
+      "new_std": 0.0023570226039551583,
+      "expert_mean": 58.410000000000004,
+      "expert_std": 0.12027745701779212,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed1_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed2_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed3_v1_fedre/summary.json"
+      ]
+    },
+    {
+      "id": "iclr2027_fedre_10agent",
+      "title": "FedRE",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 60,
+      "agent_count": 10,
+      "ipc": 0,
+      "packet": "No raw images",
+      "soft_labels": "Shared head / representations",
+      "protocol": "Official FedRE core, RAP, complete HtM10 list, round-100 checkpoint",
+      "comparability_group": "iclr2027_10agent_fedre_native",
+      "caveat": "Native heterogeneous federated protocol with random local initialization; no raw-image communication.",
+      "source": {
+        "type": "scaling_json",
+        "path_template": "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "metrics": {
+          "global": "client_mean_global",
+          "new": "client_mean_new",
+          "expert": "client_mean_expert"
+        }
+      },
+      "communication": {
+        "object": "Shared head + entangled representations + mixture metadata",
+        "aux_kind": "parameters/representations",
+        "note": "Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.",
+        "source": {
+          "type": "fedre_summary",
+          "path_template": "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 6.306000000000001,
+      "global_std": 0.0277248384425706,
+      "new_mean": 0.0,
+      "new_std": 0.0,
+      "expert_mean": 63.06,
+      "expert_std": 0.2772483844257175,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed1_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed2_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed3_v1_fedre/summary.json"
+      ]
+    },
+    {
+      "id": "iclr2027_fedre_20agent",
+      "title": "FedRE",
+      "role": "baseline",
+      "status": "complete",
+      "paper_eligible": true,
+      "table_section": "scaling",
+      "table_order": 60,
+      "agent_count": 20,
+      "ipc": 0,
+      "packet": "No raw images",
+      "soft_labels": "Shared head / representations",
+      "protocol": "Official FedRE core, RAP, HtM10 list repeated twice, round-100 checkpoint",
+      "comparability_group": "iclr2027_20agent_fedre_native",
+      "caveat": "Native heterogeneous federated protocol with random local initialization; no raw-image communication.",
+      "source": {
+        "type": "scaling_json",
+        "path_template": "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json",
+        "expected_seeds": [
+          1,
+          2,
+          3
+        ],
+        "metrics": {
+          "global": "client_mean_global",
+          "new": "client_mean_new",
+          "expert": "client_mean_expert"
+        }
+      },
+      "communication": {
+        "object": "Shared head + entangled representations + mixture metadata",
+        "aux_kind": "parameters/representations",
+        "note": "Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.",
+        "source": {
+          "type": "fedre_summary",
+          "path_template": "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json"
+        }
+      },
+      "seeds": 3,
+      "global_mean": 3.608166666666667,
+      "global_std": 0.04637767662236768,
+      "new_mean": 0.0012280701754385965,
+      "new_std": 0.0017367534976511696,
+      "expert_mean": 72.14,
+      "expert_std": 0.9419483354551196,
+      "expected_seeds": 3,
+      "missing_seeds": [],
+      "actual_status": "complete",
+      "source_files": [
+        "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed1_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed2_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed3_v1_fedre/summary.json"
+      ]
+    }
+  ],
+  "communication": [
+    {
+      "id": "iclr2027_ours_5agent_ipc10",
+      "title": "Ours",
+      "table_order": 10,
+      "agent_count": 5,
+      "comparability_group": "iclr2027_5agent_ipc10_image_budget",
+      "object": "Synthetic image packets + sender-local logits",
+      "aux_kind": "sender logits",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed1_v1/metrics/scaling_seed_summary.json",
+        "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed2_v1/metrics/scaling_seed_summary.json",
+        "outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed3_v1/metrics/scaling_seed_summary.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 4000,
+      "aux_bytes": 640000,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 640000
+    },
+    {
+      "id": "iclr2027_ours_10agent_ipc10",
+      "title": "Ours",
+      "table_order": 10,
+      "agent_count": 10,
+      "comparability_group": "iclr2027_10agent_ipc10_image_budget",
+      "object": "Synthetic image packets + sender-local logits",
+      "aux_kind": "sender logits",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed1_v1/metrics/scaling_seed_summary.json",
+        "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed2_v1/metrics/scaling_seed_summary.json",
+        "outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed3_v1/metrics/scaling_seed_summary.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 9000,
+      "aux_bytes": 720000,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 720000
+    },
+    {
+      "id": "iclr2027_ours_20agent_ipc10",
+      "title": "Ours",
+      "table_order": 10,
+      "agent_count": 20,
+      "comparability_group": "iclr2027_20agent_ipc10_image_budget",
+      "object": "Synthetic image packets + sender-local logits",
+      "aux_kind": "sender logits",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed1_v1/metrics/scaling_seed_summary.json",
+        "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed2_v1/metrics/scaling_seed_summary.json",
+        "outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed3_v1/metrics/scaling_seed_summary.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 19000,
+      "aux_bytes": 760000,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 760000
+    },
+    {
+      "id": "iclr2027_heuristic_5agent_ipc10",
+      "title": "Heuristic",
+      "table_order": 20,
+      "agent_count": 5,
+      "comparability_group": "iclr2027_5agent_ipc10_image_budget",
+      "object": "Random real image packets + hard labels",
+      "aux_kind": "none",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed1_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed2_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed3_v1/metrics/hard_label_complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 4000,
+      "aux_bytes": 0,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 0
+    },
+    {
+      "id": "iclr2027_heuristic_10agent_ipc10",
+      "title": "Heuristic",
+      "table_order": 20,
+      "agent_count": 10,
+      "comparability_group": "iclr2027_10agent_ipc10_image_budget",
+      "object": "Random real image packets + hard labels",
+      "aux_kind": "none",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed1_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed2_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed3_v1/metrics/hard_label_complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 9000,
+      "aux_bytes": 0,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 0
+    },
+    {
+      "id": "iclr2027_heuristic_20agent_ipc10",
+      "title": "Heuristic",
+      "table_order": 20,
+      "agent_count": 20,
+      "comparability_group": "iclr2027_20agent_ipc10_image_budget",
+      "object": "Random real image packets + hard labels",
+      "aux_kind": "none",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed1_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed2_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed3_v1/metrics/hard_label_complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 19000,
+      "aux_bytes": 0,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 0
+    },
+    {
+      "id": "iclr2027_fast_5agent_ipc10",
+      "title": "FAST",
+      "table_order": 30,
+      "agent_count": 5,
+      "comparability_group": "iclr2027_5agent_ipc10_image_budget",
+      "object": "FAST-selected real image packets + hard labels",
+      "aux_kind": "none",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed1_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed2_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed3_v1/metrics/hard_label_complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 4000,
+      "aux_bytes": 0,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 0
+    },
+    {
+      "id": "iclr2027_fast_10agent_ipc10",
+      "title": "FAST",
+      "table_order": 30,
+      "agent_count": 10,
+      "comparability_group": "iclr2027_10agent_ipc10_image_budget",
+      "object": "FAST-selected real image packets + hard labels",
+      "aux_kind": "none",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed1_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed2_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed3_v1/metrics/hard_label_complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 9000,
+      "aux_bytes": 0,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 0
+    },
+    {
+      "id": "iclr2027_fast_20agent_ipc10",
+      "title": "FAST",
+      "table_order": 30,
+      "agent_count": 20,
+      "comparability_group": "iclr2027_20agent_ipc10_image_budget",
+      "object": "FAST-selected real image packets + hard labels",
+      "aux_kind": "none",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed1_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed2_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed3_v1/metrics/hard_label_complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 19000,
+      "aux_bytes": 0,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 0
+    },
+    {
+      "id": "iclr2027_full_real_5agent",
+      "title": "Full Real",
+      "table_order": 35,
+      "agent_count": 5,
+      "comparability_group": "iclr2027_5agent_full_data",
+      "object": "Full real-data image packets + hard labels",
+      "aux_kind": "none",
+      "note": "",
+      "source_files": [
+        "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed1_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed2_v1/metrics/hard_label_complete_audit.json",
+        "outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed3_v1/metrics/hard_label_complete_audit.json"
+      ],
+      "unique_images": 50000,
+      "image_deliveries": 200000,
+      "aux_bytes": 0,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 0
+    },
+    {
+      "id": "iclr2027_desa_5agent_ipc10",
+      "title": "DeSA-CIL",
+      "table_order": 40,
+      "agent_count": 5,
+      "comparability_group": "iclr2027_5agent_desa_adapted",
+      "object": "Synthetic anchors + iterative owner logits",
+      "aux_kind": "owner logits",
+      "note": "",
+      "source_files": [
+        "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed1_v1/complete_audit.json",
+        "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed2_v1/complete_audit.json",
+        "external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed3_v1/complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 4000,
+      "aux_bytes": 32000000,
+      "reported_rounds": 100,
+      "executed_rounds": 100,
+      "executed_aux_bytes": 32000000
+    },
+    {
+      "id": "iclr2027_desa_10agent_ipc10",
+      "title": "DeSA-CIL",
+      "table_order": 40,
+      "agent_count": 10,
+      "comparability_group": "iclr2027_10agent_desa_adapted",
+      "object": "Synthetic anchors + iterative owner logits",
+      "aux_kind": "owner logits",
+      "note": "",
+      "source_files": [
+        "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed1_v1/complete_audit.json",
+        "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed2_v1/complete_audit.json",
+        "external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed3_v1/complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 9000,
+      "aux_bytes": 36000000,
+      "reported_rounds": 100,
+      "executed_rounds": 100,
+      "executed_aux_bytes": 36000000
+    },
+    {
+      "id": "iclr2027_desa_20agent_ipc10",
+      "title": "DeSA-CIL",
+      "table_order": 40,
+      "agent_count": 20,
+      "comparability_group": "iclr2027_20agent_desa_adapted",
+      "object": "Synthetic anchors + iterative owner logits",
+      "aux_kind": "owner logits",
+      "note": "",
+      "source_files": [
+        "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed1_v1/complete_audit.json",
+        "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed2_v1/complete_audit.json",
+        "external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed3_v1/complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": 19000,
+      "aux_bytes": 38000000,
+      "reported_rounds": 100,
+      "executed_rounds": 100,
+      "executed_aux_bytes": 38000000
+    },
+    {
+      "id": "iclr2027_masc_5agent_ipc10",
+      "title": "MASC-complete",
+      "table_order": 50,
+      "agent_count": 5,
+      "comparability_group": "iclr2027_5agent_masc_adapted",
+      "object": "Central real CC pool + expert/student parameters",
+      "aux_kind": "model parameters",
+      "note": "",
+      "source_files": [
+        "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed1_v1_masc_homogeneous_10/complete_audit.json",
+        "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed2_v1_masc_homogeneous_10/complete_audit.json",
+        "external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed3_v1_masc_homogeneous_10/complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": null,
+      "aux_bytes": 598687920,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 598687920
+    },
+    {
+      "id": "iclr2027_masc_10agent_ipc10",
+      "title": "MASC-complete",
+      "table_order": 50,
+      "agent_count": 10,
+      "comparability_group": "iclr2027_10agent_masc_adapted",
+      "object": "Central real CC pool + expert/student parameters",
+      "aux_kind": "model parameters",
+      "note": "",
+      "source_files": [
+        "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed1_v1_masc_homogeneous_10/complete_audit.json",
+        "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed2_v1_masc_homogeneous_10/complete_audit.json",
+        "external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed3_v1_masc_homogeneous_10/complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": null,
+      "aux_bytes": 1532858240,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 1532858240
+    },
+    {
+      "id": "iclr2027_masc_20agent_ipc10",
+      "title": "MASC-complete",
+      "table_order": 50,
+      "agent_count": 20,
+      "comparability_group": "iclr2027_20agent_masc_adapted",
+      "object": "Central real CC pool + expert/student parameters",
+      "aux_kind": "model parameters",
+      "note": "",
+      "source_files": [
+        "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed1_v1_masc_homogeneous_10/complete_audit.json",
+        "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed2_v1_masc_homogeneous_10/complete_audit.json",
+        "external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed3_v1_masc_homogeneous_10/complete_audit.json"
+      ],
+      "unique_images": 1000,
+      "image_deliveries": null,
+      "aux_bytes": 4407646080,
+      "reported_rounds": 1,
+      "executed_rounds": 1,
+      "executed_aux_bytes": 4407646080
+    },
+    {
+      "id": "iclr2027_fedre_5agent",
+      "title": "FedRE",
+      "table_order": 60,
+      "agent_count": 5,
+      "comparability_group": "iclr2027_5agent_fedre_native",
+      "object": "Shared head + entangled representations + mixture metadata",
+      "aux_kind": "parameters/representations",
+      "note": "Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.",
+      "source_files": [
+        "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed1_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed2_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed3_v1_fedre/summary.json"
+      ],
+      "unique_images": 0,
+      "image_deliveries": 0,
+      "aux_bytes": 103744000,
+      "reported_rounds": 100,
+      "executed_rounds": 101,
+      "executed_aux_bytes": 104781440
+    },
+    {
+      "id": "iclr2027_fedre_10agent",
+      "title": "FedRE",
+      "table_order": 60,
+      "agent_count": 10,
+      "comparability_group": "iclr2027_10agent_fedre_native",
+      "object": "Shared head + entangled representations + mixture metadata",
+      "aux_kind": "parameters/representations",
+      "note": "Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.",
+      "source_files": [
+        "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed1_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed2_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed3_v1_fedre/summary.json"
+      ],
+      "unique_images": 0,
+      "image_deliveries": 0,
+      "aux_bytes": 207368000,
+      "reported_rounds": 100,
+      "executed_rounds": 101,
+      "executed_aux_bytes": 209441680
+    },
+    {
+      "id": "iclr2027_fedre_20agent",
+      "title": "FedRE",
+      "table_order": 60,
+      "agent_count": 20,
+      "comparability_group": "iclr2027_20agent_fedre_native",
+      "object": "Shared head + entangled representations + mixture metadata",
+      "aux_kind": "parameters/representations",
+      "note": "Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.",
+      "source_files": [
+        "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed1_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed2_v1_fedre/summary.json",
+        "external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed3_v1_fedre/summary.json"
+      ],
+      "unique_images": 0,
+      "image_deliveries": 0,
+      "aux_bytes": 414616000,
+      "reported_rounds": 100,
+      "executed_rounds": 101,
+      "executed_aux_bytes": 418762160
+    }
+  ]
+}

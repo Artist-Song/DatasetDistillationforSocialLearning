@@ -1,40 +1,16 @@
 # Current Status
 
-更新时间：`2026-07-29 08:45 UTC`
+更新时间：`2026-07-31 03:46 UTC`
 
 ## IPC10 多 seed / 多 agent 活动队列
 
-主方法 `5/10/20 agents x seeds1/2/3` 九个单元已全部完成，105个receiver最终checkpoint均通过
-strict-load、100维输出、finite state/output、结果行SHA和独立重评门禁。基于seed-level mean的
-Global/New/Expert（population std）分别为：5-agent `39.1827+/-0.5228 / 33.7167+/-0.5334 /
-61.0467+/-0.9058`，10-agent `34.0247+/-0.1653 / 31.3885+/-0.2033 /
-57.7500+/-0.1768`，20-agent `29.6722+/-0.2126 / 28.2265+/-0.2209 /
-57.1400+/-0.0779`。
+完整57单元研究矩阵已经结束：主方法9个单元和baseline队列48个单元全部完成。队列最终状态为
+`complete`、`48/48`，结束时间是`2026-07-31T03:46:05Z`；当前没有receiver或baseline进程在运行。
 
-5-agent的Heuristic、FAST和Full Real三seed，以及10-agent的Heuristic和FAST三seed均已完成并通过
-完整审计。基于seed-level mean的Global/New/Expert分别为：5-agent Heuristic
-`33.6047+/-0.5867 / 25.9058+/-0.7516 / 64.4000+/-0.0852`，FAST
-`31.6693+/-0.2909 / 23.5400+/-0.4361 / 64.1867+/-0.3578`，Full Real
-`58.0707+/-1.2810 / 54.4458+/-2.0711 / 72.5700+/-1.8820`；10-agent Heuristic
-`26.7610+/-0.4469 / 23.9837+/-0.5145 / 51.7567+/-0.8858`，FAST
-`24.1510+/-0.1236 / 21.1359+/-0.1487 / 51.2867+/-0.2175`。这些结果尚待registry登记，不能在
-`RESULTS.md`中手工写入。
-
-Full Real、Heuristic、FAST、DeSA-CIL、MASC-complete和FedRE的动态5/10/20-agent适配、通信统计、
-provenance、resume门禁和完成审计已闭合；182项全量单测、py_compile、配置生成、48任务dry-run、
-项目文档检查和`git diff --check`均通过。启动前RTX 4090为空闲`1 MiB / 24,564 MiB, 0%`，数据盘
-可用约45 GiB；没有删除、移动或覆盖任何已有checkpoint、packet、pool source或provenance。
-
-baseline统一队列：`scripts/run_iclr2027_baseline_matrix.py`；状态与日志位于
-`logs/iclr2027_baseline_matrix/`。任一expert、packet、通信量、receiver coverage、checkpoint或
-SHA provenance门禁失败都会停止队列，不会静默进入下一任务。
-
-队列已于`2026-07-29T02:56:29Z`启动，master PID/PGID=`105288/105288`，最大并发为5。当前已完成
-`16/48`个baseline单元，正在运行20-agent Heuristic seed2；前15个receiver已完成，最后5个
-receiver于`08:44 UTC`后启动。最近采样为GPU utilization `99%`、显存`10,726 MiB`、功耗约
-`244 W`，没有Traceback、OOM或non-finite日志；数据盘可用约36 GiB。状态文件：
-`logs/iclr2027_baseline_matrix/queue_status.json`；master log：
-`logs/iclr2027_baseline_matrix/master.log`。
+正式数值和研究口径只维护在`PROJECT_SPEC.md`。registry生成的结果入口为`RESULTS.md`；论文主表、
+通信表及逐run provenance位于`paper_tables/iclr2027_scaling_results.*`、
+`paper_tables/iclr2027_scaling_communication.*`和`paper_tables/iclr2027_scaling_provenance.json`。
+统一队列状态与日志保留在`logs/iclr2027_baseline_matrix/`。
 
 扩容前已完成的最新通信诊断为：
 
@@ -65,19 +41,10 @@ configs/iclr2027/cifar100_5agent20cls_dkp_domain_mix_r02_full_steps3780_ipc10_se
 全100类 IPC10 pool，不重新蒸馏；仍须完整保留 pool catalog、source packet、best snapshot 和
 SHA-256 provenance。
 
-当前队列顺序固定为：
-
-1. Ours的5/10/20-agent三seed九个单元已完成并审计通过。
-2. baseline先完成5-agent横向比较：Heuristic、FAST、Full Real三seed；其中Heuristic seed1已完成。
-3. 再补齐10-agent和20-agent的Heuristic、FAST三seed；Full Real不扩到10/20-agent。
-4. 外部baseline按DeSA-CIL、同构MASC-complete、FedRE分别完成5/10/20-agent三seed。
-5. 当前不启动IPC20/IPC50；每个任务完成审计后才进入下一任务。
-
-最终研究矩阵共57个method-scale-seed单元：Ours 9、Heuristic 9、FAST 9、Full Real 3、DeSA 9、
-MASC 9、FedRE 9。baseline队列含48个单元，当前已完成16个、剩余32个（含正在运行的单元）。
-静态配对审计已通过：相同split/model/seed、cosine expert复用、固定3780步、hard-label方法
-零logits、FAST固定官方commit和补丁SHA、Full Real独立full-data group，以及外部方法各自独立的
-通信口径均符合约定。
+最终矩阵的来源审计计数为：主方法seed summary `9/9` complete，hard-label audit `21/21` passed，
+DeSA audit `9/9` passed，MASC audit `9/9` passed，FedRE summary `9/9` complete。内部方法保持相同
+split/model/seed、cosine expert复用、固定3780步和hard-label零logits；外部方法保持各自独立通信
+口径。后续如增加IPC或数据集实验，必须使用新的run name和独立comparability group。
 
 固定图片池 catalog：
 `configs/packet_pools/cifar100_fullclass_ipc10_seed0_dkp_v2.yaml`，catalog SHA-256 为
@@ -85,7 +52,7 @@ MASC 9、FedRE 9。baseline队列含48个单元，当前已完成16个、剩余3
 继续严格使用 ConvNet-3、ConvNet-4、AlexNet、standard ResNet-10、standard ResNet-18；禁止把
 compact ResNet 静默替换进当前协议。
 
-## 活动队列
+## 历史运行记录
 
 ```text
 Live process/GPU state was rechecked at 2026-07-28 08:19 UTC; archived PIDs were not treated as live.

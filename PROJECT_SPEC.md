@@ -550,40 +550,32 @@ MASC使用官方同构Netwider13、IPC10且总计1000张CC真实图，同时单�
 模型列表前5个、10-agent使用完整列表、20-agent将该列表按原顺序重复两次。FedRE只替换为当前
 seed1/2/3的5/10/20-agent互斥全局类别划分，并保留CIFAR-100官方train/test。
 
-当前完整研究矩阵因此为57个method-scale-seed单元：已完成Ours 9个，baseline队列48个，其中
-Heuristic 5-agent seed1已提前完成、实际剩余47个训练单元。内部静态配对门禁要求相同class/model
-split与seed、相同cosine expert来源、3780-step schedule以及hard-label方法零logits。FAST固定HEAD
-commit `6a218fcfdc93838634921399b0de6a36cdd29756`、pixels/per-class/minmax和算法seed0；实际执行还
-包含一处NumPy广播兼容补丁，tracked diff SHA-256为
-`73dc25a3daf930a9aa3f1fdbbb5a994983e275d5dff6bbe10a7330ef70ac900c`，该SHA必须进入packet provenance
-和cache key，不能把dirty工作树写成未修改官方源码。Full Real每类500张且保持独立full-data
-comparability group。任何未满足这些条件的单元不得启动。
+截至`2026-07-31 03:46 UTC`，完整研究矩阵的57个method-scale-seed单元均已完成：Ours 9、
+Heuristic 9、FAST 9、Full Real 3、DeSA-CIL 9、MASC-complete 9、FedRE 9。每个seed先覆盖该规模
+全部receiver再求seed内均值；表中为三个seed-level mean的均值和population std，单位为百分比：
 
-截至`2026-07-29 08:45 UTC`，已经形成以下完整三seed内部聚合；每个seed都先覆盖该规模全部receiver
-再求seed内均值，表中标准差为seed-level population std：
+| Method | 5 agents Global / New / Expert | 10 agents Global / New / Expert | 20 agents Global / New / Expert |
+|---|---|---|---|
+| Ours | 39.18 +/- 0.52 / 33.72 +/- 0.53 / 61.05 +/- 0.91 | 34.02 +/- 0.17 / 31.39 +/- 0.20 / 57.75 +/- 0.18 | 29.67 +/- 0.21 / 28.23 +/- 0.22 / 57.14 +/- 0.08 |
+| Heuristic | 33.60 +/- 0.59 / 25.91 +/- 0.75 / 64.40 +/- 0.09 | 26.76 +/- 0.45 / 23.98 +/- 0.51 / 51.76 +/- 0.89 | 19.22 +/- 0.63 / 16.82 +/- 0.66 / 64.87 +/- 0.21 |
+| FAST | 31.67 +/- 0.29 / 23.54 +/- 0.44 / 64.19 +/- 0.36 | 24.15 +/- 0.12 / 21.14 +/- 0.15 / 51.29 +/- 0.22 | 17.25 +/- 0.06 / 14.80 +/- 0.07 / 63.65 +/- 0.84 |
+| Full Real | 58.07 +/- 1.28 / 54.45 +/- 2.07 / 72.57 +/- 1.88 | - | - |
+| DeSA-CIL* | 14.64 +/- 0.83 / 1.17 +/- 0.12 / 68.51 +/- 3.65 | 9.70 +/- 0.07 / 2.31 +/- 0.13 / 76.18 +/- 0.78 | 6.39 +/- 0.07 / 2.27 +/- 0.03 / 84.64 +/- 1.19 |
+| MASC-complete* | 8.96 +/- 0.12 / 1.96 +/- 0.25 / 37.00 +/- 1.60 | 6.24 +/- 0.24 / 2.11 +/- 0.36 / 43.48 +/- 1.15 | 4.75 +/- 0.08 / 1.80 +/- 0.12 / 60.87 +/- 1.86 |
+| FedRE | 11.69 +/- 0.02 / 0.00 +/- 0.00 / 58.41 +/- 0.12 | 6.31 +/- 0.03 / 0.00 +/- 0.00 / 63.06 +/- 0.28 | 3.61 +/- 0.05 / 0.00 +/- 0.00 / 72.14 +/- 0.94 |
 
-| Agents | Method | Global | New | Expert |
-|---:|---|---:|---:|---:|
-| 5 | DKP-SL | 39.1827 +/- 0.5228 | 33.7167 +/- 0.5334 | 61.0467 +/- 0.9058 |
-| 5 | Heuristic | 33.6047 +/- 0.5867 | 25.9058 +/- 0.7516 | 64.4000 +/- 0.0852 |
-| 5 | FAST | 31.6693 +/- 0.2909 | 23.5400 +/- 0.4361 | 64.1867 +/- 0.3578 |
-| 5 | Full Real | 58.0707 +/- 1.2810 | 54.4458 +/- 2.0711 | 72.5700 +/- 1.8820 |
-| 10 | DKP-SL | 34.0247 +/- 0.1653 | 31.3885 +/- 0.2033 | 57.7500 +/- 0.1768 |
-| 10 | Heuristic | 26.7610 +/- 0.4469 | 23.9837 +/- 0.5145 | 51.7567 +/- 0.8858 |
-| 10 | FAST | 24.1510 +/- 0.1236 | 21.1359 +/- 0.1487 | 51.2867 +/- 0.2175 |
+Global是首要指标。Ours在三个规模上均优于相同IPC10图像预算的Heuristic和FAST；5-agent的Expert
+低于二者，必须作为权衡报告。Full Real是高通信oracle，只运行5-agent。DeSA-CIL*和
+MASC-complete*为明确标注的适配协议；FedRE保留原始异构联邦训练核心和round-100报告点。它们的
+native通信对象不同，因此不参与image-only预算下的方法差值计算。
 
-DKP-SL相对Heuristic的配对三seed均值差为：5-agent Global/New/Expert
-`+5.5780/+7.8108/-3.3533`，10-agent `+7.2637/+7.4048/+5.9933`；相对FAST分别为
-`+7.5133/+10.1767/-3.1400`和`+9.8737/+10.2526/+6.4633`。5-agent必须如实报告Expert权衡。
-上述run均已通过完整审计，但在`experiments/registry.yaml`完成白名单登记并由结果builder生成表格前，
-仍是`complete_interim`，不得手工写入`RESULTS.md`或论文正式表。20-agent Heuristic/FAST和全部外部
-baseline仍在队列中，不使用partial receiver数值。
-
-每个新 run 必须使用独立 run_name，并在所有 receiver 完成后才计算 seed-level mean。启动顺序为
-5-agent多 seed、10-agent、20-agent；任一 packet/checkpoint/provenance/coverage 门禁失败即停止该
-阶段。主方法九单元已全部完成后，baseline按5-agent横向对比优先、再扩10/20-agent的顺序运行；
-不启动IPC20/IPC50，也不调度10/20-agent Full Real。统一fail-closed队列为
-`scripts/run_iclr2027_baseline_matrix.py`，状态写入
+全部19个聚合条目已进入`experiments/registry.yaml`白名单并标记complete/paper-eligible；
+`scripts/build_project_results.py`从原始CSV/JSON重新聚合并生成`RESULTS.md`、
+`paper_tables/iclr2027_scaling_results.*`、`paper_tables/iclr2027_scaling_communication.*`和完整
+provenance JSON。内部静态配对条件仍为相同class/model split与seed、相同cosine expert来源、
+3780-step schedule以及hard-label方法零logits。FAST固定HEAD commit
+`6a218fcfdc93838634921399b0de6a36cdd29756`及已记录的NumPy兼容补丁SHA；Full Real保持独立
+full-data comparability group。统一队列已以`48/48`完成，最终状态位于
 `logs/iclr2027_baseline_matrix/queue_status.json`。
 
 ### 论文方法写作交接：定义、公式与代码映射

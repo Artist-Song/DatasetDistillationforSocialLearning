@@ -1,5 +1,5 @@
 version: 1
-updated_at: '2026-07-28'
+updated_at: '2026-07-31'
 selection_policy:
   primary: global
   near_tie_threshold: 0.5
@@ -271,6 +271,545 @@ experiments:
       average_key: agent_id
       average_value: avg
       metrics: *average_metrics
+
+  - id: iclr2027_ours_5agent_ipc10
+    title: Ours
+    role: main
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 10
+    agent_count: 5
+    ipc: 10
+    packet: Distilled images
+    soft_labels: Sender expert-class logits
+    protocol: DKP-SL r02, cosine expert, prototype initialization, 3780 receiver steps
+    comparability_group: iclr2027_5agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: &scaling_seeds [1, 2, 3]
+      method: DKP_SL
+      receiver_key: receiver_agent
+      expected_receivers: &scaling_receivers5 [0, 1, 2, 3, 4]
+      metrics: &scaling_pipeline_metrics
+        global: acc_global_after
+        new: acc_new_after
+        expert: acc_expert_after
+    communication:
+      object: Synthetic image packets + sender-local logits
+      aux_kind: sender logits
+      source:
+        type: dkp_summary
+        path_template: outputs/cifar100_5agent20cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/scaling_seed_summary.json
+
+  - id: iclr2027_ours_10agent_ipc10
+    title: Ours
+    role: main
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 10
+    agent_count: 10
+    ipc: 10
+    packet: Distilled images
+    soft_labels: Sender expert-class logits
+    protocol: DKP-SL r02, cosine expert, prototype initialization, 3780 receiver steps
+    comparability_group: iclr2027_10agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL
+      receiver_key: receiver_agent
+      expected_receivers: &scaling_receivers10 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: Synthetic image packets + sender-local logits
+      aux_kind: sender logits
+      source:
+        type: dkp_summary
+        path_template: outputs/cifar100_10agent10cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/scaling_seed_summary.json
+
+  - id: iclr2027_ours_20agent_ipc10
+    title: Ours
+    role: main
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 10
+    agent_count: 20
+    ipc: 10
+    packet: Distilled images
+    soft_labels: Sender expert-class logits
+    protocol: DKP-SL r02, cosine expert, prototype initialization, 3780 receiver steps
+    comparability_group: iclr2027_20agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL
+      receiver_key: receiver_agent
+      expected_receivers: &scaling_receivers20 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: Synthetic image packets + sender-local logits
+      aux_kind: sender logits
+      source:
+        type: dkp_summary
+        path_template: outputs/cifar100_20agent5cls_dkp_r02_full_steps3780_ipc10_seed{seed}_v1/metrics/scaling_seed_summary.json
+
+  - id: iclr2027_heuristic_5agent_ipc10
+    title: Heuristic
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 20
+    agent_count: 5
+    ipc: 10
+    packet: Random real images
+    soft_labels: 'No'
+    protocol: Hard labels, r02 receiver, 3780 receiver steps
+    comparability_group: iclr2027_5agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL_ABLATION
+      receiver_key: receiver_agent
+      expected_receivers: *scaling_receivers5
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: Random real image packets + hard labels
+      aux_kind: none
+      source:
+        type: hard_label_audit
+        path_template: outputs/cifar100_5agent20cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json
+
+  - id: iclr2027_heuristic_10agent_ipc10
+    title: Heuristic
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 20
+    agent_count: 10
+    ipc: 10
+    packet: Random real images
+    soft_labels: 'No'
+    protocol: Hard labels, r02 receiver, 3780 receiver steps
+    comparability_group: iclr2027_10agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL_ABLATION
+      receiver_key: receiver_agent
+      expected_receivers: *scaling_receivers10
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: Random real image packets + hard labels
+      aux_kind: none
+      source:
+        type: hard_label_audit
+        path_template: outputs/cifar100_10agent10cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json
+
+  - id: iclr2027_heuristic_20agent_ipc10
+    title: Heuristic
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 20
+    agent_count: 20
+    ipc: 10
+    packet: Random real images
+    soft_labels: 'No'
+    protocol: Hard labels, r02 receiver, 3780 receiver steps
+    comparability_group: iclr2027_20agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL_ABLATION
+      receiver_key: receiver_agent
+      expected_receivers: *scaling_receivers20
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: Random real image packets + hard labels
+      aux_kind: none
+      source:
+        type: hard_label_audit
+        path_template: outputs/cifar100_20agent5cls_heuristic_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json
+
+  - id: iclr2027_fast_5agent_ipc10
+    title: FAST
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 30
+    agent_count: 5
+    ipc: 10
+    packet: Selected real images
+    soft_labels: 'No'
+    protocol: Official pixels/per-class/minmax selection, hard labels, r02 receiver
+    comparability_group: iclr2027_5agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL_ABLATION
+      receiver_key: receiver_agent
+      expected_receivers: *scaling_receivers5
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: FAST-selected real image packets + hard labels
+      aux_kind: none
+      source:
+        type: hard_label_audit
+        path_template: outputs/cifar100_5agent20cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json
+
+  - id: iclr2027_fast_10agent_ipc10
+    title: FAST
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 30
+    agent_count: 10
+    ipc: 10
+    packet: Selected real images
+    soft_labels: 'No'
+    protocol: Official pixels/per-class/minmax selection, hard labels, r02 receiver
+    comparability_group: iclr2027_10agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL_ABLATION
+      receiver_key: receiver_agent
+      expected_receivers: *scaling_receivers10
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: FAST-selected real image packets + hard labels
+      aux_kind: none
+      source:
+        type: hard_label_audit
+        path_template: outputs/cifar100_10agent10cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json
+
+  - id: iclr2027_fast_20agent_ipc10
+    title: FAST
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 30
+    agent_count: 20
+    ipc: 10
+    packet: Selected real images
+    soft_labels: 'No'
+    protocol: Official pixels/per-class/minmax selection, hard labels, r02 receiver
+    comparability_group: iclr2027_20agent_ipc10_image_budget
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL_ABLATION
+      receiver_key: receiver_agent
+      expected_receivers: *scaling_receivers20
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: FAST-selected real image packets + hard labels
+      aux_kind: none
+      source:
+        type: hard_label_audit
+        path_template: outputs/cifar100_20agent5cls_fast_hard_r02_steps3780_ipc10_seed{seed}_v1/metrics/hard_label_complete_audit.json
+
+  - id: iclr2027_full_real_5agent
+    title: Full Real
+    role: oracle
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 35
+    agent_count: 5
+    ipc: 500
+    packet: All real images
+    soft_labels: 'No'
+    protocol: High-communication full-data oracle, r02 receiver, 3780 receiver steps
+    comparability_group: iclr2027_5agent_full_data
+    caveat: High-communication oracle; not IPC10 matched and not scheduled for 10/20 agents.
+    source:
+      type: scaling_pipeline
+      path_template: outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed{seed}_v1/metrics/social_results.csv
+      expected_seeds: *scaling_seeds
+      method: DKP_SL_ABLATION
+      receiver_key: receiver_agent
+      expected_receivers: *scaling_receivers5
+      metrics: *scaling_pipeline_metrics
+    communication:
+      object: Full real-data image packets + hard labels
+      aux_kind: none
+      source:
+        type: hard_label_audit
+        path_template: outputs/cifar100_5agent20cls_full_real_r02_steps3780_seed{seed}_v1/metrics/hard_label_complete_audit.json
+
+  - id: iclr2027_desa_5agent_ipc10
+    title: DeSA-CIL
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 40
+    agent_count: 5
+    ipc: 10
+    packet: Synthetic anchors
+    soft_labels: Iterative owner logits
+    protocol: Owner-aware class-incremental adaptation, heterogeneous task backbones, 100 rounds
+    comparability_group: iclr2027_5agent_desa_adapted
+    caveat: Adapted DeSA-CIL protocol; synthetic anchors and iterative owner logits are both communicated.
+    source:
+      type: scaling_average_rows
+      path_template: external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1/social_results.csv
+      expected_seeds: *scaling_seeds
+      average_key: receiver
+      average_value: avg
+      metrics: &scaling_average_metrics
+        global: acc_global
+        new: acc_new
+        expert: acc_expert
+    communication:
+      object: Synthetic anchors + iterative owner logits
+      aux_kind: owner logits
+      source:
+        type: desa_audit
+        path_template: external_baselines/outputs/desa_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1/complete_audit.json
+
+  - id: iclr2027_desa_10agent_ipc10
+    title: DeSA-CIL
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 40
+    agent_count: 10
+    ipc: 10
+    packet: Synthetic anchors
+    soft_labels: Iterative owner logits
+    protocol: Owner-aware class-incremental adaptation, heterogeneous task backbones, 100 rounds
+    comparability_group: iclr2027_10agent_desa_adapted
+    caveat: Adapted DeSA-CIL protocol; synthetic anchors and iterative owner logits are both communicated.
+    source:
+      type: scaling_average_rows
+      path_template: external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1/social_results.csv
+      expected_seeds: *scaling_seeds
+      average_key: receiver
+      average_value: avg
+      metrics: *scaling_average_metrics
+    communication:
+      object: Synthetic anchors + iterative owner logits
+      aux_kind: owner logits
+      source:
+        type: desa_audit
+        path_template: external_baselines/outputs/desa_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1/complete_audit.json
+
+  - id: iclr2027_desa_20agent_ipc10
+    title: DeSA-CIL
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 40
+    agent_count: 20
+    ipc: 10
+    packet: Synthetic anchors
+    soft_labels: Iterative owner logits
+    protocol: Owner-aware class-incremental adaptation, heterogeneous task backbones, 100 rounds
+    comparability_group: iclr2027_20agent_desa_adapted
+    caveat: Adapted DeSA-CIL protocol; synthetic anchors and iterative owner logits are both communicated.
+    source:
+      type: scaling_average_rows
+      path_template: external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1/social_results.csv
+      expected_seeds: *scaling_seeds
+      average_key: receiver
+      average_value: avg
+      metrics: *scaling_average_metrics
+    communication:
+      object: Synthetic anchors + iterative owner logits
+      aux_kind: owner logits
+      source:
+        type: desa_audit
+        path_template: external_baselines/outputs/desa_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1/complete_audit.json
+
+  - id: iclr2027_masc_5agent_ipc10
+    title: MASC-complete
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 50
+    agent_count: 5
+    ipc: 10
+    packet: Real CC images
+    soft_labels: Teacher KD
+    protocol: Homogeneous official Netwider13, CC + RA + HFE, model interaction
+    comparability_group: iclr2027_5agent_masc_adapted
+    caveat: Homogeneous adapted MASC protocol; parameter interaction and the central CC image pool are both reported.
+    source:
+      type: scaling_average_rows
+      path_template: external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/social_results.csv
+      expected_seeds: *scaling_seeds
+      average_key: agent_id
+      average_value: avg
+      metrics: *scaling_average_metrics
+    communication:
+      object: Central real CC pool + expert/student parameters
+      aux_kind: model parameters
+      source:
+        type: masc_audit
+        path_template: external_baselines/outputs/masc_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/complete_audit.json
+
+  - id: iclr2027_masc_10agent_ipc10
+    title: MASC-complete
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 50
+    agent_count: 10
+    ipc: 10
+    packet: Real CC images
+    soft_labels: Teacher KD
+    protocol: Homogeneous official Netwider13, CC + RA + HFE, model interaction
+    comparability_group: iclr2027_10agent_masc_adapted
+    caveat: Homogeneous adapted MASC protocol; parameter interaction and the central CC image pool are both reported.
+    source:
+      type: scaling_average_rows
+      path_template: external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/social_results.csv
+      expected_seeds: *scaling_seeds
+      average_key: agent_id
+      average_value: avg
+      metrics: *scaling_average_metrics
+    communication:
+      object: Central real CC pool + expert/student parameters
+      aux_kind: model parameters
+      source:
+        type: masc_audit
+        path_template: external_baselines/outputs/masc_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/complete_audit.json
+
+  - id: iclr2027_masc_20agent_ipc10
+    title: MASC-complete
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 50
+    agent_count: 20
+    ipc: 10
+    packet: Real CC images
+    soft_labels: Teacher KD
+    protocol: Homogeneous official Netwider13, CC + RA + HFE, model interaction
+    comparability_group: iclr2027_20agent_masc_adapted
+    caveat: Homogeneous adapted MASC protocol; parameter interaction and the central CC image pool are both reported.
+    source:
+      type: scaling_average_rows
+      path_template: external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/social_results.csv
+      expected_seeds: *scaling_seeds
+      average_key: agent_id
+      average_value: avg
+      metrics: *scaling_average_metrics
+    communication:
+      object: Central real CC pool + expert/student parameters
+      aux_kind: model parameters
+      source:
+        type: masc_audit
+        path_template: external_baselines/outputs/masc_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_masc_homogeneous_10/complete_audit.json
+
+  - id: iclr2027_fedre_5agent
+    title: FedRE
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 60
+    agent_count: 5
+    ipc: 0
+    packet: No raw images
+    soft_labels: Shared head / representations
+    protocol: Official FedRE core, RAP, HtM10 first five models, round-100 checkpoint
+    comparability_group: iclr2027_5agent_fedre_native
+    caveat: Native heterogeneous federated protocol with random local initialization; no raw-image communication.
+    source:
+      type: scaling_json
+      path_template: external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json
+      expected_seeds: *scaling_seeds
+      metrics: &scaling_fedre_metrics
+        global: client_mean_global
+        new: client_mean_new
+        expert: client_mean_expert
+    communication:
+      object: Shared head + entangled representations + mixture metadata
+      aux_kind: parameters/representations
+      note: Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.
+      source:
+        type: fedre_summary
+        path_template: external_baselines/outputs/fedre_scaling/cifar100_5agent20cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json
+
+  - id: iclr2027_fedre_10agent
+    title: FedRE
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 60
+    agent_count: 10
+    ipc: 0
+    packet: No raw images
+    soft_labels: Shared head / representations
+    protocol: Official FedRE core, RAP, complete HtM10 list, round-100 checkpoint
+    comparability_group: iclr2027_10agent_fedre_native
+    caveat: Native heterogeneous federated protocol with random local initialization; no raw-image communication.
+    source:
+      type: scaling_json
+      path_template: external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json
+      expected_seeds: *scaling_seeds
+      metrics: *scaling_fedre_metrics
+    communication:
+      object: Shared head + entangled representations + mixture metadata
+      aux_kind: parameters/representations
+      note: Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.
+      source:
+        type: fedre_summary
+        path_template: external_baselines/outputs/fedre_scaling/cifar100_10agent10cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json
+
+  - id: iclr2027_fedre_20agent
+    title: FedRE
+    role: baseline
+    status: complete
+    paper_eligible: true
+    table_section: scaling
+    table_order: 60
+    agent_count: 20
+    ipc: 0
+    packet: No raw images
+    soft_labels: Shared head / representations
+    protocol: Official FedRE core, RAP, HtM10 list repeated twice, round-100 checkpoint
+    comparability_group: iclr2027_20agent_fedre_native
+    caveat: Native heterogeneous federated protocol with random local initialization; no raw-image communication.
+    source:
+      type: scaling_json
+      path_template: external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json
+      expected_seeds: *scaling_seeds
+      metrics: *scaling_fedre_metrics
+    communication:
+      object: Shared head + entangled representations + mixture metadata
+      aux_kind: parameters/representations
+      note: Paper value stops at the round-100 checkpoint; the official post-checkpoint update is provenance-only.
+      source:
+        type: fedre_summary
+        path_template: external_baselines/outputs/fedre_scaling/cifar100_20agent5cls_dkp_cosine_experts_seed{seed}_v1_fedre/summary.json
 
   - id: conv_family_core
     title: Conv-family IPC=10/50

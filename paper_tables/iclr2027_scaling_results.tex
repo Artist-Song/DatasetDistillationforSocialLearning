@@ -1,0 +1,18 @@
+\begin{table*}[t]
+\centering
+\caption{CIFAR-100 social-learning scaling results. Values are three-seed mean $\pm$ population standard deviation.}
+\begin{tabular}{lrrrrrrrrr}
+\toprule
+& \multicolumn{3}{c}{5 agents} & \multicolumn{3}{c}{10 agents} & \multicolumn{3}{c}{20 agents} \\
+Method & Global & New & Expert & Global & New & Expert & Global & New & Expert \\
+\midrule
+Ours & 39.18 $\pm$ 0.52 & 33.72 $\pm$ 0.53 & 61.05 $\pm$ 0.91 & 34.02 $\pm$ 0.17 & 31.39 $\pm$ 0.20 & 57.75 $\pm$ 0.18 & 29.67 $\pm$ 0.21 & 28.23 $\pm$ 0.22 & 57.14 $\pm$ 0.08 \\
+Heuristic & 33.60 $\pm$ 0.59 & 25.91 $\pm$ 0.75 & 64.40 $\pm$ 0.09 & 26.76 $\pm$ 0.45 & 23.98 $\pm$ 0.51 & 51.76 $\pm$ 0.89 & 19.22 $\pm$ 0.63 & 16.82 $\pm$ 0.66 & 64.87 $\pm$ 0.21 \\
+FAST & 31.67 $\pm$ 0.29 & 23.54 $\pm$ 0.44 & 64.19 $\pm$ 0.36 & 24.15 $\pm$ 0.12 & 21.14 $\pm$ 0.15 & 51.29 $\pm$ 0.22 & 17.25 $\pm$ 0.06 & 14.80 $\pm$ 0.07 & 63.65 $\pm$ 0.84 \\
+Full Real & 58.07 $\pm$ 1.28 & 54.45 $\pm$ 2.07 & 72.57 $\pm$ 1.88 & -- & -- & -- & -- & -- & -- \\
+DeSA-CIL* & 14.64 $\pm$ 0.83 & 1.17 $\pm$ 0.12 & 68.51 $\pm$ 3.65 & 9.70 $\pm$ 0.07 & 2.31 $\pm$ 0.13 & 76.18 $\pm$ 0.78 & 6.39 $\pm$ 0.07 & 2.27 $\pm$ 0.03 & 84.64 $\pm$ 1.19 \\
+MASC-complete* & 8.96 $\pm$ 0.12 & 1.96 $\pm$ 0.25 & 37.00 $\pm$ 1.60 & 6.24 $\pm$ 0.24 & 2.11 $\pm$ 0.36 & 43.48 $\pm$ 1.15 & 4.75 $\pm$ 0.08 & 1.80 $\pm$ 0.12 & 60.87 $\pm$ 1.86 \\
+FedRE & 11.69 $\pm$ 0.02 & 0.00 $\pm$ 0.00 & 58.41 $\pm$ 0.12 & 6.31 $\pm$ 0.03 & 0.00 $\pm$ 0.00 & 63.06 $\pm$ 0.28 & 3.61 $\pm$ 0.05 & 0.00 $\pm$ 0.00 & 72.14 $\pm$ 0.94 \\
+\bottomrule
+\end{tabular}
+\end{table*}
